@@ -19,12 +19,14 @@ function formatShortDuration(start, end) {
 const STATUS_OPTIONS = [
   { value: '', label: 'Tất cả trạng thái' },
   { value: 'COMPLETED', label: 'Đã thanh toán' },
+  { value: 'PAYMENT_REQUESTED', label: 'Chờ duyệt thanh toán' },
   { value: 'ACTIVE', label: 'Đang chơi' },
   { value: 'CANCELLED', label: 'Đã hủy' },
 ];
 
 const STATUS_BADGE = {
   COMPLETED: 'bg-green-100 text-green-800',
+  PAYMENT_REQUESTED: 'bg-amber-100 text-amber-800',
   ACTIVE: 'bg-blue-100 text-blue-800',
   CANCELLED: 'bg-gray-100 text-gray-700',
 };

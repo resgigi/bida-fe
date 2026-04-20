@@ -4,12 +4,12 @@ import { HiOutlineHome, HiOutlineViewGrid, HiOutlineShoppingBag, HiOutlineUsers,
 import useAuthStore from '../stores/authStore';
 
 const navItems = [
-  { to: '/', icon: HiOutlineHome, label: 'Dashboard', roles: ['SUPER_ADMIN', 'MANAGER'] },
-  { to: '/rooms', icon: HiOutlineViewGrid, label: 'Phòng bàn', roles: ['SUPER_ADMIN', 'MANAGER', 'STAFF'] },
-  { to: '/products', icon: HiOutlineShoppingBag, label: 'Sản phẩm', roles: ['SUPER_ADMIN', 'MANAGER', 'STAFF'] },
-  { to: '/users', icon: HiOutlineUsers, label: 'Nhân viên', roles: ['SUPER_ADMIN', 'MANAGER'] },
-  { to: '/reports', icon: HiOutlineChartBar, label: 'Báo cáo', roles: ['SUPER_ADMIN', 'MANAGER', 'STAFF'] },
-  { to: '/session-history', icon: HiOutlineClipboardList, label: 'Lịch sử phiên', roles: ['SUPER_ADMIN', 'MANAGER'] },
+  { to: '/', icon: HiOutlineHome, label: 'Dashboard', roles: ['SUPER_ADMIN'] },
+  { to: '/rooms', icon: HiOutlineViewGrid, label: 'Phòng bàn', roles: ['SUPER_ADMIN', 'MANAGER', 'CASHIER', 'STAFF'] },
+  { to: '/products', icon: HiOutlineShoppingBag, label: 'Sản phẩm', roles: ['SUPER_ADMIN', 'MANAGER', 'CASHIER', 'STAFF'] },
+  { to: '/users', icon: HiOutlineUsers, label: 'Nhân viên', roles: ['SUPER_ADMIN'] },
+  { to: '/reports', icon: HiOutlineChartBar, label: 'Báo cáo', roles: ['SUPER_ADMIN'] },
+  { to: '/session-history', icon: HiOutlineClipboardList, label: 'Lịch sử phiên', roles: ['SUPER_ADMIN', 'MANAGER', 'CASHIER'] },
   { to: '/settings', icon: HiOutlineCog, label: 'Cài đặt', roles: ['SUPER_ADMIN', 'MANAGER'] },
 ];
 
@@ -30,8 +30,8 @@ export default function Layout() {
       {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="h-16 flex items-center gap-3 px-6 border-b border-gray-200">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">OB</div>
-          <span className="font-bold text-lg text-gray-800">OpenBida</span>
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">LV</div>
+          <span className="font-bold text-lg text-gray-800">KARAOKE LASVEGAS 434</span>
         </div>
         <nav className="p-4 space-y-1 flex-1">
           {filtered.map((item) => (
@@ -56,7 +56,9 @@ export default function Layout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-800 truncate">{user?.fullName}</p>
-              <p className="text-xs text-gray-500">{user?.role === 'SUPER_ADMIN' ? 'Admin' : user?.role === 'MANAGER' ? 'Quản lý' : 'Nhân viên'}</p>
+              <p className="text-xs text-gray-500">
+                {user?.role === 'SUPER_ADMIN' ? 'Admin' : user?.role === 'MANAGER' ? 'Quản lý' : user?.role === 'CASHIER' ? 'Thu ngân' : 'Nhân viên'}
+              </p>
             </div>
           </div>
           <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 w-full transition-colors">
@@ -70,7 +72,7 @@ export default function Layout() {
           <button className="lg:hidden p-2 rounded-lg hover:bg-gray-100" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <HiOutlineX className="w-6 h-6" /> : <HiOutlineMenu className="w-6 h-6" />}
           </button>
-          <h1 className="text-lg font-semibold text-gray-800">OpenBida POS</h1>
+          <h1 className="text-lg font-semibold text-gray-800">KARAOKE LASVEGAS 434</h1>
         </header>
         <main className="flex-1 p-4 lg:p-6 overflow-auto">
           <Outlet />

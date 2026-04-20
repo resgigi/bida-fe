@@ -134,7 +134,7 @@ export default function DashboardPage() {
         <div className="pointer-events-none absolute -bottom-16 left-10 h-48 w-48 rounded-full bg-teal-400/15 blur-3xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-sm font-medium text-indigo-200">OpenBida · Tổng quan</p>
+            <p className="text-sm font-medium text-indigo-200">KARAOKE LASVEGAS 434 · Tổng quan</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Dashboard</h1>
             <p className="mt-2 max-w-xl text-sm text-slate-300">
               Chọn khoảng thời gian để xem doanh thu, phiên chơi và hàng bán. Dữ liệu cập nhật định kỳ; bạn có thể làm mới thủ công.

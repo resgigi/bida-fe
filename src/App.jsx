@@ -18,12 +18,12 @@ export default function App() {
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route path="/" element={<ProtectedRoute roles={['SUPER_ADMIN', 'MANAGER']}><DashboardPage /></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute roles={['SUPER_ADMIN']}><DashboardPage /></ProtectedRoute>} />
         <Route path="/rooms" element={<RoomsPage />} />
         <Route path="/products" element={<ProductsPage />} />
-        <Route path="/users" element={<ProtectedRoute roles={['SUPER_ADMIN', 'MANAGER']}><UsersPage /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute roles={['SUPER_ADMIN', 'MANAGER', 'STAFF']}><ReportsPage /></ProtectedRoute>} />
-        <Route path="/session-history" element={<ProtectedRoute roles={['SUPER_ADMIN', 'MANAGER']}><SessionHistoryPage /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute roles={['SUPER_ADMIN']}><UsersPage /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute roles={['SUPER_ADMIN']}><ReportsPage /></ProtectedRoute>} />
+        <Route path="/session-history" element={<ProtectedRoute roles={['SUPER_ADMIN', 'MANAGER', 'CASHIER']}><SessionHistoryPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute roles={['SUPER_ADMIN', 'MANAGER']}><SettingsPage /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />

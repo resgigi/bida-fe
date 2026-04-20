@@ -1,18 +1,26 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { HiOutlineX } from 'react-icons/hi';
 import api from '../../services/api';
 import { formatVND } from '../../utils/format';
 
-export default function CheckoutModal({ session, room, playAmount, foodAmount, capturedAt, onClose, onSuccess }) {
+export default function CheckoutModal({ session, room, playAmount, foodAmount, capturedAt, canEditPlayAmount = false, onClose, onSuccess }) {
   const [discountType, setDiscountType] = useState('amount');
   const [discountValue, setDiscountValue] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [paidAmount, setPaidAmount] = useState('');
   const [note, setNote] = useState('');
 
-  const subtotal = playAmount + foodAmount;
+  const [editablePlayAmount, setEditablePlayAmount] = useState(playAmount);
+
+  useEffect(() => {
+    setEditablePlayAmount(playAmount);
+  }, [playAmount]);
+
+  const effectivePlayAmount = canEditPlayAmount ? Number(editablePlayAmount) : playAmount;
+
+  const subtotal = effectivePlayAmount + foodAmount;
   const discountAmount = discountType === 'percent' ? Math.round(subtotal * Number(discountValue) / 100) : Number(discountValue);
   const total = Math.max(0, subtotal - discountAmount);
   const paid = paidAmount ? Number(paidAmount) : total;
@@ -27,6 +35,8 @@ export default function CheckoutModal({ session, room, playAmount, foodAmount, c
           paidAmount: paid,
           paymentMethod,
           note,
+          // Allow managers/cashiers to adjust the "Tiền giờ" before approving checkout.
+          playAmountOverride: Number.isFinite(effectivePlayAmount) ? Math.max(0, Math.round(effectivePlayAmount)) : undefined,
         })
         .then((r) => r.data.data),
     onSuccess: (completed) => {
@@ -46,7 +56,20 @@ export default function CheckoutModal({ session, room, playAmount, foodAmount, c
         </div>
         <div className="p-5 space-y-4">
           <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-            <div className="flex justify-between text-sm"><span className="text-gray-500">Tiền giờ:</span><span className="font-medium">{formatVND(playAmount)}</span></div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Tiền giờ:</span>
+              {canEditPlayAmount ? (
+                <input
+                  type="number"
+                  min={0}
+                  value={editablePlayAmount}
+                  onChange={(e) => setEditablePlayAmount(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-28 text-right font-medium bg-white border border-gray-200 rounded-md px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              ) : (
+                <span className="font-medium">{formatVND(playAmount)}</span>
+              )}
+            </div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Tiền món:</span><span className="font-medium">{formatVND(foodAmount)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Giảm giá:</span><span className="font-medium text-red-500">-{formatVND(discountAmount)}</span></div>
             <div className="border-t border-gray-200 pt-2 flex justify-between"><span className="font-bold text-gray-800">Tổng cộng</span><span className="text-xl font-bold text-green-600">{formatVND(total)}</span></div>

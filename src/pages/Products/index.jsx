@@ -71,7 +71,7 @@ export default function ProductsPage() {
   const [deleteProduct, setDeleteProduct] = useState(null);
   const [showCategories, setShowCategories] = useState(false);
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'MANAGER';
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'MANAGER' || user?.role === 'CASHIER';
   const queryClient = useQueryClient();
 
   const {

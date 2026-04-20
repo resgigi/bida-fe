@@ -16,7 +16,7 @@ export default function LoginPage() {
     try {
       const user = await login(username, password);
       toast.success(`Xin chào, ${user.fullName}!`);
-      navigate(user.role === 'STAFF' ? '/rooms' : '/');
+      navigate(user.role === 'SUPER_ADMIN' ? '/' : '/rooms');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Đăng nhập thất bại');
     } finally {
@@ -30,10 +30,10 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl font-bold text-white">OB</span>
+              <span className="text-2xl font-bold text-white">LV</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">OpenBida POS</h1>
-            <p className="text-gray-500 mt-1">Phần mềm quản lý quán bida</p>
+            <h1 className="text-2xl font-bold text-gray-800">KARAOKE LASVEGAS 434</h1>
+            <p className="text-gray-500 mt-1">Phần mềm quản lý karaoke</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>

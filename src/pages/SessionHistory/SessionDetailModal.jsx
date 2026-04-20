@@ -17,7 +17,7 @@ function formatDuration(start, end) {
 }
 
 const PAYMENT_LABEL = { CASH: 'Tiền mặt', TRANSFER: 'Chuyển khoản', CARD: 'Thẻ' };
-const STATUS_LABEL = { ACTIVE: 'Đang chơi', COMPLETED: 'Đã thanh toán', CANCELLED: 'Đã hủy' };
+const STATUS_LABEL = { ACTIVE: 'Đang chơi', PAYMENT_REQUESTED: 'Chờ duyệt thanh toán', COMPLETED: 'Đã thanh toán', CANCELLED: 'Đã hủy' };
 
 export default function SessionDetailModal({ sessionId, onClose }) {
   const [printSession, setPrintSession] = useState(null);
@@ -60,7 +60,7 @@ export default function SessionDetailModal({ sessionId, onClose }) {
           {!isLoading && s && (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${s.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : s.status === 'ACTIVE' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>
+                <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${s.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : s.status === 'ACTIVE' ? 'bg-blue-100 text-blue-800' : s.status === 'PAYMENT_REQUESTED' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>
                   {STATUS_LABEL[s.status] || s.status}
                 </span>
                 <span className="text-sm text-gray-600">Phòng: <strong className="text-gray-900">{s.room?.name}</strong></span>

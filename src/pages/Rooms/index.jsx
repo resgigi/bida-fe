@@ -38,7 +38,7 @@ export default function RoomsPage() {
   const [startRoom, setStartRoom] = useState(null);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'MANAGER';
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'MANAGER' || user?.role === 'CASHIER';
 
   const { data: rooms = [], isLoading } = useQuery({
     queryKey: ['rooms', tab],

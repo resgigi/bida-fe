@@ -120,8 +120,8 @@ export default function InvoicePrint({ session, onClose }) {
       <style>{`
         @media print {
           @page {
-            margin: 3mm;
-            size: 80mm auto;
+            margin: 2mm;
+            size: 80mm;
           }
           html, body {
             height: auto !important;
@@ -147,8 +147,8 @@ export default function InvoicePrint({ session, onClose }) {
             margin: 0 !important;
           }
           #invoice-print-shell {
-            width: 74mm !important;
-            max-width: 74mm !important;
+            width: 76mm !important;
+            max-width: 76mm !important;
             margin: 0 auto !important;
             border: 0 !important;
           }

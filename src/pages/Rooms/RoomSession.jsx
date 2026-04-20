@@ -16,6 +16,7 @@ export default function RoomSession({ room, session, onClose }) {
   const [showCheckout, setShowCheckout] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [checkoutSnapshot, setCheckoutSnapshot] = useState(null);
+  const [endedForPayment, setEndedForPayment] = useState(false);
   const endingConfirmedRef = useRef(false);
   const [productQtyInput, setProductQtyInput] = useState({});
   const [completedForInvoice, setCompletedForInvoice] = useState(null);
@@ -60,13 +61,25 @@ export default function RoomSession({ room, session, onClose }) {
     mutationFn: (id) => api.delete(`/orders/items/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
   });
+  const requestPaymentMutation = useMutation({
+    mutationFn: () => api.post(`/sessions/${session.id}/request-payment`).then((r) => r.data.data),
+    onError: (err) => toast.error(err.response?.data?.message || 'Không gửi được yêu cầu thanh toán'),
+  });
 
   const currentSession = sessionData || session;
   const orderItems = currentSession.orderItems || [];
   const currentPlayAmount = calcPlayAmount(session.startTime, room.pricePerHour);
-  const playAmount = checkoutSnapshot?.playAmount ?? currentPlayAmount;
+  const isFrozenByPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
+  const frozenSeconds = isFrozenByPaymentRequested
+    ? calcDurationSeconds(session.startTime, currentSession.endTime || currentSession.paymentRequestedAt || null)
+    : seconds;
+  const frozenPlayAmount = isFrozenByPaymentRequested
+    ? (typeof currentSession.totalPlayAmount === 'number' ? currentSession.totalPlayAmount : currentPlayAmount)
+    : currentPlayAmount;
+
+  const playAmount = checkoutSnapshot?.playAmount ?? frozenPlayAmount;
   const foodAmount = orderItems.reduce((s, i) => s + i.totalPrice, 0);
-  const displaySeconds = checkoutSnapshot?.seconds ?? seconds;
+  const displaySeconds = checkoutSnapshot?.seconds ?? (isFrozenByPaymentRequested ? frozenSeconds : seconds);
 
   const filteredProducts = products.filter((p) => {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.code.toLowerCase().includes(search.toLowerCase());
@@ -74,9 +87,37 @@ export default function RoomSession({ room, session, onClose }) {
     return matchSearch && matchCat;
   });
 
+  const canApproveCheckout = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(user?.role);
+  const isPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
+
   const commitEndSession = () => {
     endingConfirmedRef.current = true;
-    setShowCheckout(true);
+    setEndedForPayment(true);
+  };
+
+  const handleRequestOrCheckout = async () => {
+    if (isPaymentRequested) {
+      if (canApproveCheckout) setShowCheckout(true);
+      return;
+    }
+    try {
+      const requested = await requestPaymentMutation.mutateAsync();
+      setEndedForPayment(false);
+      queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      toast.success('Đã gửi yêu cầu thanh toán');
+      if (canApproveCheckout) {
+        setCheckoutSnapshot({
+          seconds: calcDurationSeconds(requested.startTime, requested.endTime),
+          playAmount: requested.totalPlayAmount,
+          foodAmount: requested.totalFoodAmount,
+          capturedAt: requested.paymentRequestedAt || new Date().toISOString(),
+        });
+        setShowCheckout(true);
+      }
+    } catch {
+      // handled by mutation onError
+    }
   };
 
   return (
@@ -116,21 +157,42 @@ export default function RoomSession({ room, session, onClose }) {
             <p className="text-sm text-yellow-700 font-medium">Tiền giờ</p>
             <p className="text-xl font-bold text-yellow-700">{formatVND(playAmount)}</p>
           </div>
-          <button
-            onClick={() => {
-              setCheckoutSnapshot({
-                seconds,
-                playAmount: currentPlayAmount,
-                foodAmount,
-                capturedAt: new Date().toISOString(),
-              });
-              endingConfirmedRef.current = false;
-              setShowEndConfirm(true);
-            }}
-            className="mt-4 w-full py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 transition-colors"
-          >
-            Kết thúc phiên
-          </button>
+          {isPaymentRequested ? (
+            <button
+              onClick={handleRequestOrCheckout}
+              disabled={!canApproveCheckout}
+              className="mt-4 w-full py-3 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:hover:bg-amber-600"
+            >
+              {canApproveCheckout ? 'Duyệt thanh toán' : 'Đã gửi yêu cầu thanh toán'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setCheckoutSnapshot({
+                    seconds,
+                    playAmount: currentPlayAmount,
+                    foodAmount,
+                    capturedAt: new Date().toISOString(),
+                  });
+                  endingConfirmedRef.current = false;
+                  setShowEndConfirm(true);
+                }}
+                className="mt-4 w-full py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 transition-colors"
+              >
+                Kết thúc phiên
+              </button>
+              {endedForPayment && (
+                <button
+                  onClick={handleRequestOrCheckout}
+                  disabled={requestPaymentMutation.isPending}
+                  className="mt-2 w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {requestPaymentMutation.isPending ? 'Đang gửi...' : 'Yêu cầu thanh toán'}
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         {orderItems.length > 0 && (
@@ -225,20 +287,27 @@ export default function RoomSession({ room, session, onClose }) {
         </div>
       </div>
 
-      {showCheckout && (
+      {showCheckout && canApproveCheckout && (
         <CheckoutModal
           session={currentSession}
           room={room}
           playAmount={playAmount}
-          foodAmount={checkoutSnapshot?.foodAmount ?? foodAmount}
-          capturedAt={checkoutSnapshot?.capturedAt}
+          foodAmount={
+            checkoutSnapshot?.foodAmount ?? (isPaymentRequested
+              ? (typeof currentSession.totalFoodAmount === 'number' ? currentSession.totalFoodAmount : foodAmount)
+              : foodAmount)
+          }
+          capturedAt={checkoutSnapshot?.capturedAt ?? currentSession.paymentRequestedAt ?? currentSession.endTime}
+          canEditPlayAmount={canApproveCheckout}
           onClose={() => {
             setShowCheckout(false);
             setCheckoutSnapshot(null);
+            setEndedForPayment(false);
           }}
           onSuccess={(completed) => {
             setShowCheckout(false);
             setCheckoutSnapshot(null);
+            setEndedForPayment(false);
             setCompletedForInvoice(completed);
           }}
         />
@@ -248,7 +317,10 @@ export default function RoomSession({ room, session, onClose }) {
         isOpen={showEndConfirm}
         onClose={() => {
           setShowEndConfirm(false);
-          if (!endingConfirmedRef.current) setCheckoutSnapshot(null);
+          if (!endingConfirmedRef.current) {
+            setCheckoutSnapshot(null);
+            setEndedForPayment(false);
+          }
           endingConfirmedRef.current = false;
         }}
         onConfirm={commitEndSession}

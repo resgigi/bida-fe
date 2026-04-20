@@ -51,7 +51,7 @@ export default function StartSessionModal({ room, onClose }) {
             ) : (
               staffList.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.fullName} {s.role === 'MANAGER' ? '(QL)' : s.role === 'SUPER_ADMIN' ? '(Admin)' : ''}
+                  {s.fullName} {s.role === 'MANAGER' ? '(QL)' : s.role === 'CASHIER' ? '(Thu ngân)' : s.role === 'SUPER_ADMIN' ? '(Admin)' : ''}
                 </option>
               ))
             )}
@@ -59,7 +59,7 @@ export default function StartSessionModal({ room, onClose }) {
           <p className="mt-1.5 text-xs text-gray-500">
             {user?.role === 'STAFF'
               ? 'Bạn chỉ có thể chọn chính mình.'
-              : 'Quản lý có thể giao phiên cho nhân viên khác.'}
+              : 'Quản lý/thu ngân có thể giao phiên cho nhân viên khác.'}
           </p>
         </div>
         <div className="flex gap-3 justify-end pt-2">

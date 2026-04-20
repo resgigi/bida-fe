@@ -6,7 +6,7 @@ import api from '../../services/api';
 import useAuthStore from '../../stores/authStore';
 import Modal from '../../components/Modal';
 
-const ROLE_MAP = { SUPER_ADMIN: 'Admin', MANAGER: 'Quản lý', STAFF: 'Nhân viên' };
+const ROLE_MAP = { SUPER_ADMIN: 'Admin', MANAGER: 'Quản lý', CASHIER: 'Thu ngân', STAFF: 'Nhân viên' };
 
 function UserForm({ user: editUser, onClose }) {
   const [form, setForm] = useState({
@@ -31,7 +31,7 @@ function UserForm({ user: editUser, onClose }) {
       <div><label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập</label><input value={form.username} onChange={(e) => set('username', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" required disabled={!!editUser} /></div>
       <div><label className="block text-sm font-medium text-gray-700 mb-1">Họ tên</label><input value={form.fullName} onChange={(e) => set('fullName', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" required /></div>
       <div><label className="block text-sm font-medium text-gray-700 mb-1">{editUser ? 'Mật khẩu mới (để trống nếu không đổi)' : 'Mật khẩu'}</label><input type="password" value={form.password} onChange={(e) => set('password', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" required={!editUser} /></div>
-      <div><label className="block text-sm font-medium text-gray-700 mb-1">Vai trò</label><select value={form.role} onChange={(e) => set('role', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"><option value="STAFF">Nhân viên</option><option value="MANAGER">Quản lý</option><option value="SUPER_ADMIN">Admin</option></select></div>
+      <div><label className="block text-sm font-medium text-gray-700 mb-1">Vai trò</label><select value={form.role} onChange={(e) => set('role', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"><option value="STAFF">Nhân viên</option><option value="CASHIER">Thu ngân</option><option value="MANAGER">Quản lý</option><option value="SUPER_ADMIN">Admin</option></select></div>
       <div className="flex gap-3 justify-end pt-2">
         <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium">Hủy</button>
         <button type="submit" disabled={mutation.isPending} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">Lưu</button>
@@ -83,7 +83,7 @@ export default function UsersPage() {
               <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50">
                 <td className="py-3 px-4 font-medium">{u.fullName}</td>
                 <td className="py-3 px-4 text-gray-500">{u.username}</td>
-                <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.role === 'SUPER_ADMIN' ? 'bg-purple-50 text-purple-700' : u.role === 'MANAGER' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{ROLE_MAP[u.role]}</span></td>
+                <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.role === 'SUPER_ADMIN' ? 'bg-purple-50 text-purple-700' : u.role === 'MANAGER' ? 'bg-blue-50 text-blue-700' : u.role === 'CASHIER' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{ROLE_MAP[u.role]}</span></td>
                 <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{u.isActive ? 'Hoạt động' : 'Vô hiệu'}</span></td>
                 {currentUser?.role === 'SUPER_ADMIN' && <td className="py-3 px-4 text-right">
                   <button onClick={() => { setEditUser(u); setShowForm(true); }} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><HiOutlinePencil className="w-4 h-4" /></button>

@@ -75,6 +75,7 @@ function AuditLogsSection() {
 
 export default function SettingsPage() {
   const { user } = useAuthStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const [deleteModal, setDeleteModal] = useState(null);
   const queryClient = useQueryClient();
 
@@ -85,11 +86,15 @@ export default function SettingsPage() {
   const [storeName, setStoreName] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
   const [storePhone, setStorePhone] = useState('');
+  const [stockManagementEnabled, setStockManagementEnabled] = useState(true);
 
   useEffect(() => {
     if (settings.storeName) setStoreName(settings.storeName);
     if (settings.storeAddress) setStoreAddress(settings.storeAddress);
     if (settings.storePhone) setStorePhone(settings.storePhone);
+    if (settings.stockManagementEnabled != null) {
+      setStockManagementEnabled(String(settings.stockManagementEnabled).toLowerCase() === 'true');
+    }
   }, [settings]);
 
   const updateSettings = useMutation({
@@ -98,12 +103,14 @@ export default function SettingsPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Lỗi'),
   });
 
-  const deleteActions = [
-    { type: 'sessions', label: 'Tất cả phiên chơi', desc: 'Xóa toàn bộ lịch sử phiên chơi và đơn hàng' },
-    { type: 'products', label: 'Tất cả sản phẩm', desc: 'Xóa toàn bộ sản phẩm và danh mục' },
-    { type: 'rooms', label: 'Tất cả phòng', desc: 'Xóa toàn bộ phòng bàn' },
-    ...(user?.role === 'SUPER_ADMIN' ? [{ type: 'all', label: 'TOÀN BỘ DỮ LIỆU', desc: 'Reset hệ thống về trạng thái ban đầu (trừ tài khoản, xóa luôn nhật ký thao tác)' }] : []),
-  ];
+  const deleteActions = isSuperAdmin
+    ? [
+      { type: 'sessions', label: 'Tất cả phiên chơi', desc: 'Xóa toàn bộ lịch sử phiên chơi và đơn hàng' },
+      { type: 'products', label: 'Tất cả sản phẩm', desc: 'Xóa toàn bộ sản phẩm và danh mục' },
+      { type: 'rooms', label: 'Tất cả phòng', desc: 'Xóa toàn bộ phòng bàn' },
+      { type: 'all', label: 'TOÀN BỘ DỮ LIỆU', desc: 'Reset hệ thống về trạng thái ban đầu (trừ tài khoản, xóa luôn nhật ký thao tác)' },
+    ]
+    : [];
 
   return (
     <div className="space-y-6">
@@ -115,27 +122,68 @@ export default function SettingsPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Tên cửa hàng</label><input value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Địa chỉ</label><input value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label><input value={storePhone} onChange={(e) => setStorePhone(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" /></div>
-          <button onClick={() => updateSettings.mutate({ storeName, storeAddress, storePhone })} disabled={updateSettings.isPending} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">Lưu cài đặt</button>
+          <div className="rounded-lg border border-gray-200 p-3 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Quản lý tồn kho</p>
+              <p className="text-xs text-gray-500">
+                {isSuperAdmin
+                  ? 'Tắt đi nếu chỉ muốn tính tiền, không cần nhập kho.'
+                  : 'Chỉ Admin tổng mới có quyền thay đổi mục này.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!isSuperAdmin}
+              onClick={() => setStockManagementEnabled((v) => !v)}
+              className={`relative h-6 w-11 rounded-full transition-colors ${stockManagementEnabled ? 'bg-blue-600' : 'bg-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${stockManagementEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+          <button
+            onClick={() =>
+              updateSettings.mutate(
+                isSuperAdmin
+                  ? {
+                    storeName,
+                    storeAddress,
+                    storePhone,
+                    stockManagementEnabled: String(stockManagementEnabled),
+                  }
+                  : {
+                    storeName,
+                    storeAddress,
+                    storePhone,
+                  }
+              )
+            }
+            disabled={updateSettings.isPending}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+          >
+            Lưu cài đặt
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-red-200 p-5">
-        <h3 className="text-base font-semibold text-red-800 mb-1">Xóa dữ liệu</h3>
-        <p className="text-sm text-red-600 mb-4">Cẩn thận! Dữ liệu đã xóa không thể khôi phục.</p>
-        <div className="space-y-3">
-          {deleteActions.map((action) => (
-            <div key={action.type} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-              <div>
-                <p className="text-sm font-medium text-gray-800">{action.label}</p>
-                <p className="text-xs text-gray-500">{action.desc}</p>
+      {isSuperAdmin && (
+        <div className="bg-white rounded-xl border border-red-200 p-5">
+          <h3 className="text-base font-semibold text-red-800 mb-1">Xóa dữ liệu</h3>
+          <p className="text-sm text-red-600 mb-4">Cẩn thận! Dữ liệu đã xóa không thể khôi phục.</p>
+          <div className="space-y-3">
+            {deleteActions.map((action) => (
+              <div key={action.type} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{action.label}</p>
+                  <p className="text-xs text-gray-500">{action.desc}</p>
+                </div>
+                <button onClick={() => setDeleteModal(action)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm font-medium">
+                  <HiOutlineTrash className="w-4 h-4" /> Xóa
+                </button>
               </div>
-              <button onClick={() => setDeleteModal(action)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm font-medium">
-                <HiOutlineTrash className="w-4 h-4" /> Xóa
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <AuditLogsSection />
 

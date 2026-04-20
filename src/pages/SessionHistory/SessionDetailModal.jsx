@@ -29,6 +29,25 @@ export default function SessionDetailModal({ sessionId, onClose }) {
 
   if (!sessionId) return null;
 
+  const roomActions = (s?.roomActions || []).map((item) => {
+    if (item.action === 'TRANSFER_ROOM') {
+      return {
+        id: item.id,
+        createdAt: item.createdAt,
+        label: `Chuyển phòng: ${item.details?.fromRoomName || 'N/A'} -> ${item.details?.toRoomName || 'N/A'}`,
+        reason: item.details?.reason || '',
+        by: item.by,
+      };
+    }
+    return {
+      id: item.id,
+      createdAt: item.createdAt,
+      label: `Hủy phòng: ${item.details?.roomName || s?.room?.name || 'N/A'}`,
+      reason: item.details?.reason || '',
+      by: item.by,
+    };
+  });
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -146,6 +165,23 @@ export default function SessionDetailModal({ sessionId, onClose }) {
                   </div>
                 )}
               </div>
+
+              {roomActions.length > 0 && (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-amber-800">Lịch sử hủy/chuyển phòng</h3>
+                  <div className="space-y-1">
+                    {roomActions.map((row) => (
+                      <div key={row.id} className="rounded-lg bg-white/70 border border-amber-100 p-2">
+                        <p className="text-sm font-medium text-amber-900">{row.label}</p>
+                        <p className="text-xs text-amber-700">
+                          {formatDateTime(row.createdAt)} - {row.by}
+                        </p>
+                        {row.reason && <p className="text-sm text-amber-900 mt-1">Lý do: {row.reason}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

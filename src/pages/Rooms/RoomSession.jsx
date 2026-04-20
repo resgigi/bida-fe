@@ -7,6 +7,7 @@ import { formatVND, formatTime, calcDurationSeconds, calcPlayAmount } from '../.
 import CheckoutModal from './CheckoutModal';
 import InvoicePrint from '../../components/InvoicePrint';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import Modal from '../../components/Modal';
 import useAuthStore from '../../stores/authStore';
 
 export default function RoomSession({ room, session, onClose }) {
@@ -15,6 +16,11 @@ export default function RoomSession({ room, session, onClose }) {
   const [selectedCat, setSelectedCat] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [targetRoomId, setTargetRoomId] = useState('');
+  const [cancelReason, setCancelReason] = useState('');
+  const [transferReason, setTransferReason] = useState('');
   const [checkoutSnapshot, setCheckoutSnapshot] = useState(null);
   const [endedForPayment, setEndedForPayment] = useState(false);
   const endingConfirmedRef = useRef(false);
@@ -46,6 +52,11 @@ export default function RoomSession({ room, session, onClose }) {
     queryFn: () => api.get('/products/categories').then((r) => r.data.data),
   });
 
+  const { data: allRooms = [] } = useQuery({
+    queryKey: ['rooms-transfer-list'],
+    queryFn: () => api.get('/rooms').then((r) => r.data.data),
+  });
+
   const addItemMutation = useMutation({
     mutationFn: ({ productId, quantity }) => api.post(`/orders/${session.id}/items`, { productId, quantity }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['session', session.id] }); },
@@ -64,6 +75,33 @@ export default function RoomSession({ room, session, onClose }) {
   const requestPaymentMutation = useMutation({
     mutationFn: () => api.post(`/sessions/${session.id}/request-payment`).then((r) => r.data.data),
     onError: (err) => toast.error(err.response?.data?.message || 'Không gửi được yêu cầu thanh toán'),
+  });
+  const cancelSessionMutation = useMutation({
+    mutationFn: () => api.put(`/sessions/${session.id}/cancel`, { reason: cancelReason }).then((r) => r.data.data),
+    onSuccess: () => {
+      toast.success('Đã hủy phòng thành công');
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      setShowCancelConfirm(false);
+      setCancelReason('');
+      onClose();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không hủy được phòng'),
+  });
+  const transferRoomMutation = useMutation({
+    mutationFn: () => api.put(`/sessions/${session.id}/transfer-room`, { targetRoomId, reason: transferReason }).then((r) => r.data.data),
+    onSuccess: (transferred) => {
+      toast.success('Chuyển phòng thành công');
+      setShowTransferModal(false);
+      setTargetRoomId('');
+      setTransferReason('');
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+      if (transferred?.room?.id) {
+        onClose();
+      }
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không chuyển được phòng'),
   });
 
   const currentSession = sessionData || session;
@@ -89,6 +127,28 @@ export default function RoomSession({ room, session, onClose }) {
 
   const canApproveCheckout = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(user?.role);
   const isPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
+  const canManageRoomFlow = ['SUPER_ADMIN', 'MANAGER', 'CASHIER', 'STAFF'].includes(user?.role);
+  const showRoomActions = currentSession.status === 'ACTIVE' && canManageRoomFlow;
+  const showMobileSessionBar = showRoomActions || user?.role === 'STAFF';
+  const availableTransferRooms = allRooms.filter(
+    (r) => r.id !== room.id && r.status === 'AVAILABLE' && r.type !== 'TAKEAWAY'
+  );
+  const statusBadge = isPaymentRequested
+    ? 'bg-amber-100 text-amber-700'
+    : currentSession.status === 'ACTIVE'
+      ? 'bg-blue-100 text-blue-700'
+      : currentSession.status === 'CANCELLED'
+        ? 'bg-gray-100 text-gray-700'
+        : 'bg-green-100 text-green-700';
+  const statusLabel = isPaymentRequested
+    ? 'Chờ duyệt thanh toán'
+    : currentSession.status === 'ACTIVE'
+      ? 'Đang sử dụng'
+      : currentSession.status === 'CANCELLED'
+        ? 'Đã hủy'
+        : currentSession.status === 'COMPLETED'
+          ? 'Đã thanh toán'
+          : 'Đang sử dụng';
 
   const commitEndSession = () => {
     endingConfirmedRef.current = true;
@@ -127,7 +187,7 @@ export default function RoomSession({ room, session, onClose }) {
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-bold text-gray-800">{room.name}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Đang sử dụng</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge}`}>{statusLabel}</span>
             {currentSession.staff?.fullName && (
               <span className="text-xs text-gray-600 truncate max-w-full" title={currentSession.staff.fullName}>
                 NV: <strong className="text-gray-800">{currentSession.staff.fullName}</strong>
@@ -137,7 +197,26 @@ export default function RoomSession({ room, session, onClose }) {
         </div>
       </header>
 
-      <div className="flex-1 overflow-auto p-4 space-y-4 pb-24">
+      {showRoomActions && (
+        <div className="hidden md:flex shrink-0 items-stretch gap-2 border-b border-gray-200 bg-slate-50 px-4 py-2">
+          <button
+            type="button"
+            onClick={() => setShowTransferModal(true)}
+            className="flex-1 rounded-lg border border-blue-200 bg-blue-50 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            Chuyển phòng
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCancelConfirm(true)}
+            className="flex-1 rounded-lg border border-red-200 bg-red-50 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100"
+          >
+            Hủy phòng
+          </button>
+        </div>
+      )}
+
+      <div className={`flex-1 overflow-auto p-4 space-y-4 ${showMobileSessionBar ? 'pb-40 md:pb-24' : 'pb-24'}`}>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-semibold text-gray-800">Thời gian chơi</h3>
@@ -157,6 +236,11 @@ export default function RoomSession({ room, session, onClose }) {
             <p className="text-sm text-yellow-700 font-medium">Tiền giờ</p>
             <p className="text-xl font-bold text-yellow-700">{formatVND(playAmount)}</p>
           </div>
+          {showRoomActions && (
+            <p className="mt-2 text-xs text-gray-500 md:hidden">
+              Dùng thanh nút <strong>Chuyển phòng / Hủy phòng</strong> cố định phía dưới màn hình.
+            </p>
+          )}
           {isPaymentRequested ? (
             <button
               onClick={handleRequestOrCheckout}
@@ -329,38 +413,149 @@ export default function RoomSession({ room, session, onClose }) {
         confirmText="Xác nhận kết thúc"
       />
 
-      {user?.role === 'STAFF' && (
-        <div className="fixed bottom-0 inset-x-0 z-[55] bg-white border-t border-gray-200 p-2 grid grid-cols-3 gap-2 md:hidden">
-          <button
-            type="button"
-            onClick={() => orderedSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-700"
+      <Modal isOpen={showTransferModal} onClose={() => setShowTransferModal(false)} title="Chuyển phòng">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Chọn phòng trống để chuyển. Hệ thống sẽ giữ nguyên phiên chơi hiện tại và toàn bộ món đã gọi.
+          </p>
+          <select
+            value={targetRoomId}
+            onChange={(e) => setTargetRoomId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
           >
-            Đã gọi
-          </button>
-          <button
-            type="button"
-            onClick={() => productsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-700"
-          >
-            Chọn món
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCheckoutSnapshot({
-                seconds,
-                playAmount: currentPlayAmount,
-                foodAmount,
-                capturedAt: new Date().toISOString(),
-              });
-              endingConfirmedRef.current = false;
-              setShowEndConfirm(true);
-            }}
-            className="rounded-lg bg-gray-900 py-2 text-xs font-semibold text-white"
-          >
-            Kết thúc
-          </button>
+            <option value="">-- Chọn phòng đích --</option>
+            {availableTransferRooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} - {formatVND(r.pricePerHour)}/giờ
+              </option>
+            ))}
+          </select>
+          {availableTransferRooms.length === 0 && (
+            <p className="text-xs text-amber-600">Hiện không có phòng trống để chuyển.</p>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Lý do chuyển phòng</label>
+            <textarea
+              value={transferReason}
+              onChange={(e) => setTransferReason(e.target.value)}
+              rows={3}
+              placeholder="Ví dụ: Khách muốn đổi sang phòng VIP gần sân khấu..."
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowTransferModal(false);
+                setTargetRoomId('');
+                setTransferReason('');
+              }}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={() => transferRoomMutation.mutate()}
+              disabled={!targetRoomId || !transferReason.trim() || transferRoomMutation.isPending}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {transferRoomMutation.isPending ? 'Đang chuyển...' : 'Xác nhận chuyển'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showCancelConfirm} onClose={() => setShowCancelConfirm(false)} title="Hủy phòng">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Nhập lý do hủy phòng để lưu lại lịch sử thao tác.
+          </p>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            rows={3}
+            placeholder="Ví dụ: Khách đổi ý không sử dụng phòng..."
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 outline-none text-sm"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCancelConfirm(false);
+                setCancelReason('');
+              }}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              onClick={() => cancelSessionMutation.mutate()}
+              disabled={!cancelReason.trim() || cancelSessionMutation.isPending}
+              className="px-4 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {cancelSessionMutation.isPending ? 'Đang hủy...' : 'Xác nhận hủy'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {showMobileSessionBar && (
+        <div className="fixed bottom-0 inset-x-0 z-[55] space-y-2 border-t border-gray-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden">
+          {showRoomActions && (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTransferModal(true)}
+                className="rounded-lg border border-blue-200 bg-blue-50 py-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                Chuyển phòng
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(true)}
+                className="rounded-lg border border-red-200 bg-red-50 py-2.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+              >
+                Hủy phòng
+              </button>
+            </div>
+          )}
+          {user?.role === 'STAFF' && (
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => orderedSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-700"
+              >
+                Đã gọi
+              </button>
+              <button
+                type="button"
+                onClick={() => productsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-700"
+              >
+                Chọn món
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCheckoutSnapshot({
+                    seconds,
+                    playAmount: currentPlayAmount,
+                    foodAmount,
+                    capturedAt: new Date().toISOString(),
+                  });
+                  endingConfirmedRef.current = false;
+                  setShowEndConfirm(true);
+                }}
+                className="rounded-lg bg-gray-900 py-2 text-xs font-semibold text-white"
+              >
+                Kết thúc
+              </button>
+            </div>
+          )}
         </div>
       )}
 

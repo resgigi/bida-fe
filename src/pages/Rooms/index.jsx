@@ -95,6 +95,17 @@ export default function RoomsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {rooms.map((room) => {
             const activeSession = room.sessions?.[0];
+            const isPaymentRequested = activeSession?.status === 'PAYMENT_REQUESTED';
+            const statusText = room.status === 'IN_USE'
+              ? (isPaymentRequested ? 'Chờ duyệt thanh toán' : 'Đang sử dụng')
+              : room.status === 'AVAILABLE'
+                ? 'Còn trống'
+                : 'Bảo trì';
+            const statusClass = room.status === 'IN_USE'
+              ? (isPaymentRequested ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700')
+              : room.status === 'AVAILABLE'
+                ? 'bg-green-100 text-green-700'
+                : 'bg-gray-200 text-gray-600';
             return (
               <div
                 key={room.id}
@@ -105,8 +116,8 @@ export default function RoomsPage() {
                   <HiOutlineShoppingCart className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                 )}
                 <h3 className="font-semibold text-gray-800 truncate">{room.name}</h3>
-                <span className={`inline-flex mt-2 px-2 py-0.5 rounded-full text-xs font-medium ${room.status === 'IN_USE' ? 'bg-blue-100 text-blue-700' : room.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                  {room.status === 'IN_USE' ? 'Đang sử dụng' : room.status === 'AVAILABLE' ? 'Còn trống' : 'Bảo trì'}
+                <span className={`inline-flex mt-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusClass}`}>
+                  {statusText}
                 </span>
                 {activeSession && (
                   <div className="mt-2 space-y-1">

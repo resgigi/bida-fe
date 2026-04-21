@@ -127,7 +127,7 @@ export default function SettingsPage() {
               <p className="text-sm font-medium text-gray-800">Quản lý tồn kho</p>
               <p className="text-xs text-gray-500">
                 {isSuperAdmin
-                  ? 'Tắt đi nếu chỉ muốn tính tiền, không cần nhập kho.'
+                  ? 'Mặc định khi tạo sản phẩm mới. Từng sản phẩm có thể bật/tắt quản lý tồn kho riêng trên trang Sản phẩm.'
                   : 'Chỉ Admin tổng mới có quyền thay đổi mục này.'}
               </p>
             </div>

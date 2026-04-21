@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineSearch } from 'react-icons/hi';
@@ -8,28 +8,55 @@ import { formatVND } from '../../utils/format';
 import Modal from '../../components/Modal';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
-function ProductForm({ product, categories, onClose }) {
+function ProductForm({ product, categories, defaultTrackStock, onClose }) {
   const [form, setForm] = useState({
     name: product?.name || '', code: product?.code || '', categoryId: product?.categoryId || categories[0]?.id || '',
     price: product?.price || 0, stock: product?.stock || 0, isActive: product?.isActive !== false,
+    trackStock: product ? product.trackStock !== false : true,
   });
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!product && typeof defaultTrackStock === 'boolean') {
+      setForm((f) => ({ ...f, trackStock: defaultTrackStock }));
+    }
+  }, [product, defaultTrackStock]);
+
   const mutation = useMutation({
-    mutationFn: (data) => product ? api.put(`/products/${product.id}`, data) : api.post('/products', data),
+    mutationFn: (data) => (product ? api.put(`/products/${product.id}`, data) : api.post('/products', data)),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success(product ? 'Đã cập nhật' : 'Đã tạo sản phẩm'); onClose(); },
     onError: (err) => toast.error(err.response?.data?.message || 'Lỗi'),
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   return (
-    <form onSubmit={(e) => { e.preventDefault(); mutation.mutate({ ...form, price: Number(form.price), stock: Number(form.stock) }); }} className="space-y-4">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        mutation.mutate({
+          ...form,
+          price: Number(form.price),
+          stock: form.trackStock ? Number(form.stock) : 0,
+          trackStock: form.trackStock,
+        });
+      }}
+      className="space-y-4"
+    >
       <div className="grid grid-cols-2 gap-4">
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Tên</label><input value={form.name} onChange={(e) => set('name', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" required /></div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Mã</label><input value={form.code} onChange={(e) => set('code', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" required /></div>
       </div>
       <div><label className="block text-sm font-medium text-gray-700 mb-1">Danh mục</label><select value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm">{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={form.trackStock} onChange={(e) => set('trackStock', e.target.checked)} className="rounded" />
+        <span className="text-sm text-gray-700">Quản lý tồn kho</span>
+      </label>
       <div className="grid grid-cols-2 gap-4">
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Giá (VND)</label><input type="number" value={form.price} onChange={(e) => set('price', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" min="0" /></div>
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">Tồn kho</label><input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" min="0" /></div>
+        {form.trackStock ? (
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Tồn kho</label><input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" min="0" /></div>
+        ) : (
+          <div className="flex items-end"><p className="text-xs text-gray-500 pb-2">Không cần nhập tồn. Sản phẩm vẫn bán được; hệ thống ghi nhận số lượng đã bán theo đơn.</p></div>
+        )}
       </div>
       <label className="flex items-center gap-2"><input type="checkbox" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} className="rounded" /><span className="text-sm text-gray-700">Đang kinh doanh</span></label>
       <div className="flex gap-3 justify-end pt-2">
@@ -52,12 +79,12 @@ function CategoryManager() {
       <div className="flex gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên danh mục" className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
         <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Mã" className="w-24 px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-        <button onClick={() => name && code && addMutation.mutate({ name, code })} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"><HiOutlinePlus className="w-5 h-5" /></button>
+        <button type="button" onClick={() => name && code && addMutation.mutate({ name, code })} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"><HiOutlinePlus className="w-5 h-5" /></button>
       </div>
       {categories.map((c) => (
         <div key={c.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
           <span className="text-sm font-medium">{c.name} <span className="text-gray-400">({c.code})</span></span>
-          <button onClick={() => delMutation.mutate(c.id)} className="text-red-400 hover:text-red-600 p-1"><HiOutlineTrash className="w-4 h-4" /></button>
+          <button type="button" onClick={() => delMutation.mutate(c.id)} className="text-red-400 hover:text-red-600 p-1"><HiOutlineTrash className="w-4 h-4" /></button>
         </div>
       ))}
     </div>
@@ -73,6 +100,14 @@ export default function ProductsPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'MANAGER' || user?.role === 'CASHIER';
   const queryClient = useQueryClient();
+  const tableColSpan = isAdmin ? 6 : 5;
+
+  const { data: settings = {} } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/admin/settings').then((r) => r.data.data),
+    enabled: isAdmin,
+  });
+  const defaultTrackStock = String(settings.stockManagementEnabled ?? 'true').toLowerCase() === 'true';
 
   const {
     data: products = [],
@@ -92,8 +127,8 @@ export default function ProductsPage() {
         <h2 className="text-2xl font-bold text-gray-800">Sản phẩm</h2>
         {isAdmin && (
           <div className="flex gap-2">
-            <button onClick={() => setShowCategories(true)} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 text-sm">Danh mục</button>
-            <button onClick={() => { setEditProduct(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 text-sm"><HiOutlinePlus className="w-5 h-5" />Thêm sản phẩm</button>
+            <button type="button" onClick={() => setShowCategories(true)} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 text-sm">Danh mục</button>
+            <button type="button" onClick={() => { setEditProduct(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 text-sm"><HiOutlinePlus className="w-5 h-5" />Thêm sản phẩm</button>
           </div>
         )}
       </div>
@@ -104,27 +139,50 @@ export default function ProductsPage() {
             <th className="text-left py-3 px-4 font-medium text-gray-500">Tên</th><th className="text-left py-3 px-4 font-medium text-gray-500">Mã</th><th className="text-left py-3 px-4 font-medium text-gray-500">Danh mục</th><th className="text-right py-3 px-4 font-medium text-gray-500">Giá</th><th className="text-right py-3 px-4 font-medium text-gray-500">Tồn</th>{isAdmin && <th className="text-right py-3 px-4 font-medium text-gray-500">Thao tác</th>}
           </tr></thead>
           <tbody>
-            {productsLoading && <tr><td colSpan={6} className="py-8 text-center text-gray-400">Đang tải sản phẩm...</td></tr>}
-            {productsError && <tr><td colSpan={6} className="py-8 text-center text-red-500">{productsErrorObj?.response?.data?.message || 'Không thể tải danh sách sản phẩm'}</td></tr>}
+            {productsLoading && <tr><td colSpan={tableColSpan} className="py-8 text-center text-gray-400">Đang tải sản phẩm...</td></tr>}
+            {productsError && <tr><td colSpan={tableColSpan} className="py-8 text-center text-red-500">{productsErrorObj?.response?.data?.message || 'Không thể tải danh sách sản phẩm'}</td></tr>}
             {products.map((p) => (
               <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="py-3 px-4 font-medium">{p.name}{!p.isActive && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Ngừng KD</span>}</td>
+                <td className="py-3 px-4 font-medium">
+                  {p.name}
+                  {p.trackStock === false && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">Không quản kho</span>}
+                  {!p.isActive && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Ngừng KD</span>}
+                </td>
                 <td className="py-3 px-4 text-gray-500">{p.code}</td>
                 <td className="py-3 px-4 text-gray-500">{p.category?.name}</td>
                 <td className="py-3 px-4 text-right font-medium">{formatVND(p.price)}</td>
-                <td className="py-3 px-4 text-right">{p.stock}</td>
-                {isAdmin && <td className="py-3 px-4 text-right">
-                  <button onClick={() => { setEditProduct(p); setShowForm(true); }} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><HiOutlinePencil className="w-4 h-4" /></button>
-                  <button onClick={() => setDeleteProduct(p)} className="p-1.5 rounded hover:bg-red-50 text-red-400"><HiOutlineTrash className="w-4 h-4" /></button>
-                </td>}
+                <td className="py-3 px-4 text-right">
+                  {p.trackStock !== false ? (
+                    p.stock
+                  ) : (
+                    <div>
+                      <span className="text-gray-500">Không quản lý</span>
+                      <p className="text-xs text-gray-400">Đã bán: {p.totalSold ?? 0}</p>
+                    </div>
+                  )}
+                </td>
+                {isAdmin && (
+                  <td className="py-3 px-4 text-right">
+                    <button type="button" onClick={() => { setEditProduct(p); setShowForm(true); }} className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><HiOutlinePencil className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => setDeleteProduct(p)} className="p-1.5 rounded hover:bg-red-50 text-red-400"><HiOutlineTrash className="w-4 h-4" /></button>
+                  </td>
+                )}
               </tr>
             ))}
-            {!productsLoading && !productsError && products.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-gray-400">Chưa có sản phẩm</td></tr>}
+            {!productsLoading && !productsError && products.length === 0 && <tr><td colSpan={tableColSpan} className="py-8 text-center text-gray-400">Chưa có sản phẩm</td></tr>}
           </tbody>
         </table>
       </div>
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={editProduct ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}>
-        {categoriesLoading ? <p className="text-sm text-gray-500">Đang tải danh mục...</p> : <ProductForm product={editProduct} categories={categories} onClose={() => setShowForm(false)} />}
+        {categoriesLoading ? <p className="text-sm text-gray-500">Đang tải danh mục...</p> : (
+          <ProductForm
+            key={editProduct?.id || 'new'}
+            product={editProduct}
+            categories={categories}
+            defaultTrackStock={defaultTrackStock}
+            onClose={() => setShowForm(false)}
+          />
+        )}
       </Modal>
       <Modal isOpen={showCategories} onClose={() => setShowCategories(false)} title="Quản lý danh mục"><CategoryManager /></Modal>
       <ConfirmDialog isOpen={!!deleteProduct} onClose={() => setDeleteProduct(null)} onConfirm={() => deleteMutation.mutate(deleteProduct.id)} title="Xóa sản phẩm" message={`Xóa "${deleteProduct?.name}"?`} confirmText="Xóa" danger />

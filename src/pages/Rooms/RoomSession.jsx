@@ -127,9 +127,10 @@ export default function RoomSession({ room, session, onClose }) {
 
   const canApproveCheckout = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(user?.role);
   const isPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
-  const canManageRoomFlow = ['SUPER_ADMIN', 'MANAGER', 'CASHIER', 'STAFF'].includes(user?.role);
+  const canManageRoomFlow = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(user?.role);
   const showRoomActions = currentSession.status === 'ACTIVE' && canManageRoomFlow;
   const showMobileSessionBar = showRoomActions || user?.role === 'STAFF';
+  const isStaff = user?.role === 'STAFF';
   const availableTransferRooms = allRooms.filter(
     (r) => r.id !== room.id && r.status === 'AVAILABLE' && r.type !== 'TAKEAWAY'
   );
@@ -291,18 +292,26 @@ export default function RoomSession({ room, session, onClose }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => item.quantity > 1 ? updateItemMutation.mutate({ id: item.id, quantity: item.quantity - 1 }) : removeItemMutation.mutate(item.id)} className="p-1 rounded bg-gray-100 hover:bg-gray-200">
+                      <button
+                        type="button"
+                        disabled={isStaff}
+                        title={isStaff ? 'Nhân viên không được giảm hoặc xóa món' : undefined}
+                        onClick={() => (item.quantity > 1 ? updateItemMutation.mutate({ id: item.id, quantity: item.quantity - 1 }) : removeItemMutation.mutate(item.id))}
+                        className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         <HiOutlineMinus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                      <button onClick={() => updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 })} className="p-1 rounded bg-gray-100 hover:bg-gray-200">
+                      <button type="button" onClick={() => updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 })} className="p-1 rounded bg-gray-100 hover:bg-gray-200">
                         <HiOutlinePlus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <span className="text-sm font-semibold text-gray-800 w-24 text-right">{formatVND(item.totalPrice)}</span>
-                    <button onClick={() => removeItemMutation.mutate(item.id)} className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600">
-                      <HiOutlineTrash className="w-4 h-4" />
-                    </button>
+                    {!isStaff && (
+                      <button type="button" onClick={() => removeItemMutation.mutate(item.id)} className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600">
+                        <HiOutlineTrash className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

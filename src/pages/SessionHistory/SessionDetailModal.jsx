@@ -29,6 +29,9 @@ export default function SessionDetailModal({ sessionId, onClose }) {
 
   if (!sessionId) return null;
 
+  const orderConfirmations = s?.orderConfirmations || [];
+  const orderItemAdjustments = s?.orderItemAdjustments || [];
+
   const roomActions = (s?.roomActions || []).map((item) => {
     if (item.action === 'TRANSFER_ROOM') {
       return {
@@ -118,6 +121,7 @@ export default function SessionDetailModal({ sessionId, onClose }) {
                           <th className="text-right py-2 px-3 font-medium text-gray-500">SL</th>
                           <th className="text-right py-2 px-3 font-medium text-gray-500">Đơn giá</th>
                           <th className="text-right py-2 px-3 font-medium text-gray-500">Thành tiền</th>
+                          <th className="text-left py-2 px-3 font-medium text-gray-500">Xác nhận gọi</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -131,6 +135,19 @@ export default function SessionDetailModal({ sessionId, onClose }) {
                             <td className="py-2 px-3 text-right">{row.quantity}</td>
                             <td className="py-2 px-3 text-right">{formatVND(row.unitPrice)}</td>
                             <td className="py-2 px-3 text-right font-medium">{formatVND(row.totalPrice)}</td>
+                            <td className="py-2 px-3 text-xs text-gray-600">
+                              {row.confirmedAt ? (
+                                <>
+                                  <span className="font-medium text-emerald-700">Đã xác nhận</span>
+                                  <span className="block text-gray-400 mt-0.5">{formatDateTime(row.confirmedAt)}</span>
+                                  {row.confirmedBy?.fullName && (
+                                    <span className="block text-gray-500">bởi {row.confirmedBy.fullName}</span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-amber-700">Chưa xác nhận</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -138,6 +155,74 @@ export default function SessionDetailModal({ sessionId, onClose }) {
                   </div>
                 )}
               </div>
+
+              {orderConfirmations.length > 0 && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 space-y-3">
+                  <h3 className="text-sm font-semibold text-emerald-900">Lịch sử xác nhận đặt món</h3>
+                  <div className="space-y-3">
+                    {orderConfirmations.map((ev) => (
+                      <div key={ev.id} className="rounded-lg bg-white/80 border border-emerald-100 p-3">
+                        <p className="text-xs text-emerald-800">
+                          <span className="font-semibold">{formatDateTime(ev.createdAt)}</span>
+                          {' — '}
+                          <span>{ev.by}</span>
+                        </p>
+                        {ev.details?.roomName && (
+                          <p className="text-xs text-gray-500 mt-0.5">Phòng: {ev.details.roomName}</p>
+                        )}
+                        {(ev.details?.lines || []).length > 0 && (
+                          <ul className="mt-2 space-y-1 text-sm text-gray-800 border-t border-emerald-100 pt-2">
+                            {ev.details.lines.map((line) => (
+                              <li key={line.orderItemId} className="flex justify-between gap-2">
+                                <span className="truncate">{line.productName} <span className="text-gray-400">({line.code})</span></span>
+                                <span className="shrink-0">SL {line.quantity} — {formatVND(line.totalPrice)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {orderItemAdjustments.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-800">Lịch sử giảm / xóa món</h3>
+                  <div className="space-y-2">
+                    {orderItemAdjustments.map((ev) => {
+                      const d = ev.details || {};
+                      const isRemove = ev.action === 'ORDER_ITEM_REMOVED';
+                      return (
+                        <div key={ev.id} className="rounded-lg bg-white border border-slate-100 p-3 text-sm">
+                          <p className="text-xs text-slate-600">
+                            <span className="font-semibold text-slate-800">{formatDateTime(ev.createdAt)}</span>
+                            {' — '}
+                            <span>{ev.by}</span>
+                          </p>
+                          <p className="mt-1 font-medium text-slate-900">
+                            {isRemove ? 'Xóa món' : 'Giảm số lượng'}
+                            {d.productName && `: ${d.productName}`}
+                            {d.code && <span className="text-gray-500 font-normal"> ({d.code})</span>}
+                          </p>
+                          {d.roomName && <p className="text-xs text-gray-500">Phòng: {d.roomName}</p>}
+                          {!isRemove && (
+                            <p className="text-xs text-slate-700 mt-1">
+                              Từ <strong>{d.previousQuantity}</strong> xuống <strong>{d.newQuantity}</strong>
+                              {d.quantityReduced != null && ` (bớt ${d.quantityReduced})`}
+                            </p>
+                          )}
+                          {isRemove && (
+                            <p className="text-xs text-slate-700 mt-1">
+                              Đã xóa dòng: SL <strong>{d.quantityRemoved}</strong>, thành tiền {formatVND(d.totalPrice ?? 0)}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2">
                 <h3 className="text-sm font-semibold text-gray-800">Tổng hợp thanh toán</h3>

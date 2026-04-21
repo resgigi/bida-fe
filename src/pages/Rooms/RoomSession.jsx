@@ -26,6 +26,7 @@ export default function RoomSession({ room, session, onClose }) {
   const endingConfirmedRef = useRef(false);
   const [productQtyInput, setProductQtyInput] = useState({});
   const [completedForInvoice, setCompletedForInvoice] = useState(null);
+  const [orderAdjustConfirm, setOrderAdjustConfirm] = useState(null);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const orderedSectionRef = useRef(null);
@@ -65,12 +66,29 @@ export default function RoomSession({ room, session, onClose }) {
 
   const updateItemMutation = useMutation({
     mutationFn: ({ id, quantity }) => api.put(`/orders/items/${id}`, { quantity }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+      queryClient.invalidateQueries({ queryKey: ['session-detail', session.id] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không cập nhật được món'),
   });
 
   const removeItemMutation = useMutation({
     mutationFn: (id) => api.delete(`/orders/items/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+      queryClient.invalidateQueries({ queryKey: ['session-detail', session.id] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không xóa được món'),
+  });
+  const confirmOrderMutation = useMutation({
+    mutationFn: () => api.post(`/sessions/${session.id}/confirm-order-items`).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+      queryClient.invalidateQueries({ queryKey: ['session-detail', session.id] });
+      toast.success('Đã xác nhận đặt món');
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không xác nhận được'),
   });
   const requestPaymentMutation = useMutation({
     mutationFn: () => api.post(`/sessions/${session.id}/request-payment`).then((r) => r.data.data),
@@ -131,6 +149,20 @@ export default function RoomSession({ room, session, onClose }) {
   const showRoomActions = currentSession.status === 'ACTIVE' && canManageRoomFlow;
   const showMobileSessionBar = showRoomActions || user?.role === 'STAFF';
   const isStaff = user?.role === 'STAFF';
+  const hasUnconfirmedItems = orderItems.some((i) => !i.confirmedAt);
+
+  const openOrderDecreaseOrRemove = (item) => {
+    if (item.quantity > 1) {
+      setOrderAdjustConfirm({ mode: 'decrease', item, nextQuantity: item.quantity - 1 });
+    } else {
+      setOrderAdjustConfirm({ mode: 'remove', item });
+    }
+  };
+
+  const openOrderRemove = (item) => {
+    setOrderAdjustConfirm({ mode: 'remove', item });
+  };
+
   const availableTransferRooms = allRooms.filter(
     (r) => r.id !== room.id && r.status === 'AVAILABLE' && r.type !== 'TAKEAWAY'
   );
@@ -282,12 +314,31 @@ export default function RoomSession({ room, session, onClose }) {
 
         {orderItems.length > 0 && (
           <div ref={orderedSectionRef} className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="text-base font-semibold text-gray-800 mb-3">Đã gọi ({orderItems.length} món)</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="text-base font-semibold text-gray-800">Đã gọi ({orderItems.length} món)</h3>
+              {currentSession.status === 'ACTIVE' && hasUnconfirmedItems && (
+                <button
+                  type="button"
+                  onClick={() => confirmOrderMutation.mutate()}
+                  disabled={confirmOrderMutation.isPending}
+                  className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {confirmOrderMutation.isPending ? 'Đang lưu...' : 'Xác nhận đã gọi món'}
+                </button>
+              )}
+            </div>
             <div className="space-y-2">
-              {orderItems.map((item) => (
+              {orderItems.map((item) => {
+                const lineConfirmed = !!item.confirmedAt;
+                return (
                 <div key={item.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{item.product?.name || 'N/A'}</p>
+                    <p className="text-sm font-medium text-gray-800 truncate flex flex-wrap items-center gap-1.5">
+                      {item.product?.name || 'N/A'}
+                      <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${lineConfirmed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {lineConfirmed ? 'Đã xác nhận' : 'Chưa xác nhận'}
+                      </span>
+                    </p>
                     <p className="text-xs text-gray-500">{formatVND(item.unitPrice)} x {item.quantity}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -296,25 +347,32 @@ export default function RoomSession({ room, session, onClose }) {
                         type="button"
                         disabled={isStaff}
                         title={isStaff ? 'Nhân viên không được giảm hoặc xóa món' : undefined}
-                        onClick={() => (item.quantity > 1 ? updateItemMutation.mutate({ id: item.id, quantity: item.quantity - 1 }) : removeItemMutation.mutate(item.id))}
+                        onClick={() => !isStaff && openOrderDecreaseOrRemove(item)}
                         className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <HiOutlineMinus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                      <button type="button" onClick={() => updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 })} className="p-1 rounded bg-gray-100 hover:bg-gray-200">
+                      <button
+                        type="button"
+                        disabled={isStaff && lineConfirmed}
+                        title={isStaff && lineConfirmed ? 'Món đã xác nhận: chỉ thu ngân/quản lý được thêm/bớt' : undefined}
+                        onClick={() => updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 })}
+                        className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         <HiOutlinePlus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <span className="text-sm font-semibold text-gray-800 w-24 text-right">{formatVND(item.totalPrice)}</span>
                     {!isStaff && (
-                      <button type="button" onClick={() => removeItemMutation.mutate(item.id)} className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600">
+                      <button type="button" onClick={() => openOrderRemove(item)} className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600">
                         <HiOutlineTrash className="w-4 h-4" />
                       </button>
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
               <div className="flex justify-between pt-2 font-semibold text-gray-800">
                 <span>Tổng tiền món</span>
                 <span>{formatVND(foodAmount)}</span>
@@ -420,6 +478,28 @@ export default function RoomSession({ room, session, onClose }) {
         title="Kết thúc phiên"
         message={`Bạn có chắc muốn kết thúc phiên của phòng "${room.name}"? Sau khi xác nhận, hệ thống sẽ giữ nguyên tiền giờ để bạn kiểm tra thanh toán.`}
         confirmText="Xác nhận kết thúc"
+      />
+
+      <ConfirmDialog
+        isOpen={!!orderAdjustConfirm}
+        onClose={() => setOrderAdjustConfirm(null)}
+        onConfirm={() => {
+          const p = orderAdjustConfirm;
+          if (!p) return;
+          if (p.mode === 'remove') {
+            removeItemMutation.mutate(p.item.id);
+          } else {
+            updateItemMutation.mutate({ id: p.item.id, quantity: p.nextQuantity });
+          }
+        }}
+        title={orderAdjustConfirm?.mode === 'remove' ? 'Xác nhận xóa món' : 'Xác nhận giảm số lượng'}
+        message={
+          orderAdjustConfirm?.mode === 'decrease'
+            ? `Giảm "${orderAdjustConfirm.item.product?.name || 'món'}" từ ${orderAdjustConfirm.item.quantity} xuống ${orderAdjustConfirm.nextQuantity}? Thao tác được ghi vào lịch sử phiên.`
+            : `Xóa hoàn toàn "${orderAdjustConfirm?.item?.product?.name || 'món'}" (số lượng ${orderAdjustConfirm?.item?.quantity ?? 0})? Thao tác được ghi vào lịch sử phiên.`
+        }
+        confirmText={orderAdjustConfirm?.mode === 'remove' ? 'Xóa món' : 'Giảm số lượng'}
+        danger={orderAdjustConfirm?.mode === 'remove'}
       />
 
       <Modal isOpen={showTransferModal} onClose={() => setShowTransferModal(false)} title="Chuyển phòng">

@@ -7,10 +7,8 @@ import {
   HiOutlineUserGroup,
   HiOutlineTrendingUp,
   HiOutlineTrendingDown,
-  HiOutlineChartSquareBar,
   HiOutlineRefresh,
 } from 'react-icons/hi';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import api from '../../services/api';
 import { formatVND } from '../../utils/format';
 
@@ -20,14 +18,6 @@ const PRESETS = [
   { id: 'month', label: 'Tháng này' },
   { id: 'year', label: 'Năm nay' },
   { id: 'custom', label: 'Khoảng ngày' },
-];
-
-const BUCKETS = [
-  { id: 'auto', label: 'Tự động' },
-  { id: 'hour', label: 'Theo giờ' },
-  { id: 'day', label: 'Theo ngày' },
-  { id: 'week', label: 'Theo tuần' },
-  { id: 'month', label: 'Theo tháng' },
 ];
 
 function buildParams(preset, customFrom, customTo, chartBucket) {
@@ -72,6 +62,8 @@ function StatCard({ icon: Icon, label, value, sub, accent }) {
 }
 
 export default function DashboardPage() {
+  const PRODUCT_PAGE_SIZE = 12;
+  const SESSION_PAGE_SIZE = 10;
   const today = new Date().toISOString().split('T')[0];
   const defaultCustomStart = (() => {
     const d = new Date();
@@ -84,12 +76,10 @@ export default function DashboardPage() {
   const [customTo, setCustomTo] = useState(today);
   const [draftFrom, setDraftFrom] = useState(defaultCustomStart);
   const [draftTo, setDraftTo] = useState(today);
-  const [chartBucket, setChartBucket] = useState('auto');
-
-  const baseParams = useMemo(
-    () => buildParams(preset, customFrom, customTo, chartBucket),
-    [preset, customFrom, customTo, chartBucket]
-  );
+  const [productSearch, setProductSearch] = useState('');
+  const [productPage, setProductPage] = useState(1);
+  const [sessionSearch, setSessionSearch] = useState('');
+  const [sessionPage, setSessionPage] = useState(1);
   const statsParams = useMemo(
     () => buildParams(preset, customFrom, customTo, 'auto'),
     [preset, customFrom, customTo]
@@ -101,30 +91,50 @@ export default function DashboardPage() {
     refetchInterval: 45000,
   });
 
-  const { data: chartRes } = useQuery({
-    queryKey: ['dashboard-chart', baseParams],
-    queryFn: () => api.get('/dashboard/revenue-chart', { params: baseParams }).then((r) => r.data.data),
-  });
-
-  const { data: topProducts } = useQuery({
-    queryKey: ['dashboard-top', statsParams],
+  const { data: allProducts } = useQuery({
+    queryKey: ['dashboard-products-summary', statsParams],
     queryFn: () => api.get('/dashboard/top-products', { params: statsParams }).then((r) => r.data.data),
   });
 
   const { data: recentSessions } = useQuery({
     queryKey: ['dashboard-recent', statsParams],
-    queryFn: () => api.get('/dashboard/recent-sessions', { params: { ...statsParams, limit: 15 } }).then((r) => r.data.data),
+    queryFn: () => api.get('/dashboard/recent-sessions', { params: { ...statsParams, limit: 200 } }).then((r) => r.data.data),
   });
-
-  const chartData = chartRes?.chart || [];
-  const bucketUsed = chartRes?.bucket || 'day';
 
   const delta = stats?.comparison?.revenueDeltaPercent;
   const showDelta = delta != null && !Number.isNaN(delta);
+  const sortedProducts = useMemo(() => [...(allProducts || [])].sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0)), [allProducts]);
+  const filteredProducts = useMemo(
+    () => sortedProducts.filter((p) => (p.name || '').toLowerCase().includes(productSearch.trim().toLowerCase())),
+    [sortedProducts, productSearch]
+  );
+  const productTotalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
+  const safeProductPage = Math.min(productPage, productTotalPages);
+  const displayedProducts = filteredProducts.slice((safeProductPage - 1) * PRODUCT_PAGE_SIZE, safeProductPage * PRODUCT_PAGE_SIZE);
+
+  const recentList = recentSessions || [];
+  const filteredSessions = useMemo(
+    () =>
+      recentList.filter((s) => {
+        const q = sessionSearch.trim().toLowerCase();
+        if (!q) return true;
+        return (
+          (s.room?.name || '').toLowerCase().includes(q) ||
+          (s.staff?.fullName || '').toLowerCase().includes(q) ||
+          (s.status || '').toLowerCase().includes(q)
+        );
+      }),
+    [recentList, sessionSearch]
+  );
+  const sessionTotalPages = Math.max(1, Math.ceil(filteredSessions.length / SESSION_PAGE_SIZE));
+  const safeSessionPage = Math.min(sessionPage, sessionTotalPages);
+  const displayedSessions = filteredSessions.slice((safeSessionPage - 1) * SESSION_PAGE_SIZE, safeSessionPage * SESSION_PAGE_SIZE);
 
   const applyCustomRange = () => {
     setCustomFrom(draftFrom);
     setCustomTo(draftTo);
+    setProductPage(1);
+    setSessionPage(1);
   };
 
   return (
@@ -215,17 +225,38 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           accent="blue"
+          icon={HiOutlineCash}
+          label="Tổng tiền giờ trong kỳ"
+          value={loadingStats ? '…' : formatVND(stats?.periodPlayRevenue || 0)}
+          sub="Doanh thu tiền giờ"
+        />
+        <StatCard
+          accent="emerald"
+          icon={HiOutlineClipboardList}
+          label="Tổng tiền món trong kỳ"
+          value={loadingStats ? '…' : formatVND(stats?.periodFoodRevenue || 0)}
+          sub={stats?.comparison?.prevPeriodRevenue != null ? `Kỳ trước: ${formatVND(stats.comparison.prevPeriodRevenue)}` : undefined}
+        />
+        <StatCard
+          accent="violet"
+          icon={HiOutlineCash}
+          label="Tổng doanh thu kỳ chọn"
+          value={loadingStats ? '…' : formatVND(stats?.periodRevenue || 0)}
+          sub={`${stats?.periodCompletedSessions ?? 0} phiên hoàn thành`}
+        />
+        <StatCard
+          accent="amber"
           icon={HiOutlineViewGrid}
           label="Phòng đang dùng"
           value={loadingStats ? '…' : `${stats?.roomsInUse ?? 0} / ${stats?.totalRooms ?? 0}`}
           sub="Luôn theo thời gian thực"
         />
         <StatCard
-          accent="emerald"
-          icon={HiOutlineCash}
-          label="Doanh thu kỳ chọn"
-          value={loadingStats ? '…' : formatVND(stats?.periodRevenue)}
-          sub={stats?.comparison?.prevPeriodRevenue != null ? `Kỳ trước: ${formatVND(stats.comparison.prevPeriodRevenue)}` : undefined}
+          accent="rose"
+          icon={HiOutlineUserGroup}
+          label="Đang phục vụ (live)"
+          value={loadingStats ? '…' : stats?.customersServing ?? 0}
+          sub="Phiên đang ACTIVE"
         />
         <StatCard
           accent="violet"
@@ -234,147 +265,131 @@ export default function DashboardPage() {
           value={loadingStats ? '…' : stats?.periodSessionsCount ?? 0}
           sub={`${stats?.periodCompletedSessions ?? 0} đã thanh toán · TB ${formatVND(stats?.avgOrderValue || 0)}/đơn`}
         />
-        <StatCard
-          accent="amber"
-          icon={HiOutlineUserGroup}
-          label="Đang phục vụ (live)"
-          value={loadingStats ? '…' : stats?.customersServing ?? 0}
-          sub="Phiên đang ACTIVE"
-        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <div className="h-full rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-                  <HiOutlineChartSquareBar className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Biểu đồ doanh thu</h3>
-                  <p className="text-xs text-slate-500">
-                    Nhóm: <span className="font-medium text-slate-700">{BUCKETS.find((b) => b.id === (chartBucket === 'auto' ? bucketUsed : chartBucket))?.label || bucketUsed}</span>
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500">Chi tiết cột:</span>
-                <select
-                  value={chartBucket}
-                  onChange={(e) => setChartBucket(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                >
-                  {BUCKETS.map((b) => (
-                    <option key={b.id} value={b.id}>{b.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="mt-4 h-80">
-              {chartData.length === 0 ? (
-                <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/80 text-sm text-slate-400">
-                  Chưa có phiên hoàn thành trong khoảng này
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} />
-                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => (v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : `${(v / 1000).toFixed(0)}k`)} axisLine={false} />
-                    <Tooltip
-                      contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.15)' }}
-                      formatter={(v, name) => [formatVND(v), name === 'play' ? 'Tiền chơi' : 'Tiền món']}
-                    />
-                    <Legend formatter={(v) => (v === 'play' ? 'Tiền chơi' : v === 'food' ? 'Tiền món' : v)} />
-                    <Bar dataKey="play" name="play" stackId="a" fill="#6366f1" radius={[0, 0, 0, 0]} maxBarSize={48} />
-                    <Bar dataKey="food" name="food" stackId="a" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={48} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+        <h3 className="text-base font-bold text-slate-900">Tất cả món trong kỳ</h3>
+        <p className="mt-0.5 text-xs text-slate-500">Hiển thị số lượng bán và tổng tiền từng món theo khoảng thời gian đã chọn</p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <input
+            type="text"
+            value={productSearch}
+            onChange={(e) => {
+              setProductSearch(e.target.value);
+              setProductPage(1);
+            }}
+            placeholder="Tìm món..."
+            className="w-full sm:w-72 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
+          <p className="text-xs text-slate-500">Trang {safeProductPage}/{productTotalPages}</p>
         </div>
-
-        <div className="lg:col-span-4">
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-            <h3 className="text-base font-bold text-slate-900">Top món (theo kỳ)</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Theo doanh thu trong khoảng đã chọn</p>
-            <ul className="mt-4 space-y-3">
-              {(topProducts || []).map((p, i) => (
-                <li key={p.productId} className="flex items-center gap-3 rounded-xl bg-slate-50/80 px-3 py-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-bold text-indigo-600 shadow-sm ring-1 ring-slate-200/80">{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-800">{p.name}</p>
-                    <p className="text-xs text-slate-500">{p.totalQuantity} lượt · {formatVND(p.totalRevenue)}</p>
-                  </div>
-                </li>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/90 text-left">
+                <th className="py-2.5 px-3 font-semibold text-slate-500">Món</th>
+                <th className="py-2.5 px-3 text-right font-semibold text-slate-500">Số lượng</th>
+                <th className="py-2.5 px-3 text-right font-semibold text-slate-500">Tổng tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayedProducts.map((p) => (
+                <tr key={p.productId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/80">
+                  <td className="py-2.5 px-3 font-medium text-slate-800">{p.name}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-700">{p.totalQuantity}</td>
+                  <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatVND(p.totalRevenue)}</td>
+                </tr>
               ))}
-              {(!topProducts || topProducts.length === 0) && <li className="py-8 text-center text-sm text-slate-400">Chưa có dữ liệu</li>}
-            </ul>
-          </div>
+              {filteredProducts.length === 0 && (
+                <tr><td colSpan={3} className="py-10 text-center text-slate-400">Chưa có dữ liệu món trong khoảng này</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={safeProductPage <= 1}
+            onClick={() => setProductPage((p) => Math.max(1, p - 1))}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            Trước
+          </button>
+          <button
+            type="button"
+            disabled={safeProductPage >= productTotalPages}
+            onClick={() => setProductPage((p) => Math.min(productTotalPages, p + 1))}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            Sau
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-          <h3 className="text-base font-bold text-slate-900">Phân tách doanh thu kỳ chọn</h3>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-xl bg-blue-50/80 p-4 ring-1 ring-blue-100/80">
-              <p className="text-xs font-medium text-blue-700/80">Tiền chơi</p>
-              <p className="mt-1 text-lg font-bold text-blue-900">{loadingStats ? '…' : formatVND(stats?.periodPlayRevenue)}</p>
-            </div>
-            <div className="rounded-xl bg-emerald-50/80 p-4 ring-1 ring-emerald-100/80">
-              <p className="text-xs font-medium text-emerald-700/80">Tiền món</p>
-              <p className="mt-1 text-lg font-bold text-emerald-900">{loadingStats ? '…' : formatVND(stats?.periodFoodRevenue)}</p>
-            </div>
-            <div className="rounded-xl bg-orange-50/80 p-4 ring-1 ring-orange-100/80">
-              <p className="text-xs font-medium text-orange-700/80">Giảm giá</p>
-              <p className="mt-1 text-lg font-bold text-orange-900">{loadingStats ? '…' : formatVND(stats?.periodDiscount)}</p>
-            </div>
-            <div className="rounded-xl bg-slate-100/80 p-4 ring-1 ring-slate-200/80">
-              <p className="text-xs font-medium text-slate-600">Tổng thu</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{loadingStats ? '…' : formatVND(stats?.periodRevenue)}</p>
-            </div>
-          </div>
-          {stats?.comparisonRange?.labelVi && (
-            <p className="mt-4 text-xs text-slate-400">
-              So sánh với kỳ: <span className="font-medium text-slate-600">{stats.comparisonRange.labelVi}</span>
-            </p>
-          )}
-        </div>
-
+      <div className="grid grid-cols-1 gap-4">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
           <h3 className="text-base font-bold text-slate-900">Phiên gần đây trong kỳ</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Tối đa 15 phiên mới nhất</p>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/90 text-left">
-                  <th className="py-2.5 px-3 font-semibold text-slate-500">Phòng</th>
-                  <th className="py-2.5 px-3 font-semibold text-slate-500">NV</th>
-                  <th className="py-2.5 px-3 font-semibold text-slate-500">Trạng thái</th>
-                  <th className="py-2.5 px-3 text-right font-semibold text-slate-500">Tổng</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(recentSessions || []).map((s) => (
-                  <tr key={s.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/80">
-                    <td className="py-2.5 px-3 font-medium text-slate-800">{s.room?.name}</td>
-                    <td className="py-2.5 px-3 text-slate-600">{s.staff?.fullName}</td>
-                    <td className="py-2.5 px-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${s.status === 'ACTIVE' ? 'bg-blue-100 text-blue-800' : s.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                        {s.status === 'ACTIVE' ? 'Đang chơi' : s.status === 'COMPLETED' ? 'Hoàn thành' : 'Đã hủy'}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatVND(s.totalAmount)}</td>
+          <p className="mt-0.5 text-xs text-slate-500">Tối đa 200 phiên mới nhất</p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <input
+              type="text"
+              value={sessionSearch}
+              onChange={(e) => {
+                setSessionSearch(e.target.value);
+                setSessionPage(1);
+              }}
+              placeholder="Tìm phòng / nhân viên / trạng thái..."
+              className="w-full sm:w-80 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+            <p className="text-xs text-slate-500">Trang {safeSessionPage}/{sessionTotalPages}</p>
+          </div>
+          {filteredSessions.length === 0 ? (
+            <div className="mt-3 rounded-xl border border-slate-100 py-10 text-center text-slate-400">Không có phiên trong khoảng này</div>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/90 text-left">
+                    <th className="py-2.5 px-3 font-semibold text-slate-500">Phòng</th>
+                    <th className="py-2.5 px-3 font-semibold text-slate-500">NV</th>
+                    <th className="py-2.5 px-3 font-semibold text-slate-500">Trạng thái</th>
+                    <th className="py-2.5 px-3 text-right font-semibold text-slate-500">Tổng</th>
                   </tr>
-                ))}
-                {(!recentSessions || recentSessions.length === 0) && (
-                  <tr><td colSpan={4} className="py-10 text-center text-slate-400">Không có phiên trong khoảng này</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {displayedSessions.map((s) => (
+                    <tr key={s.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/80">
+                      <td className="py-2.5 px-3 font-medium text-slate-800">{s.room?.name}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{s.staff?.fullName}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${s.status === 'ACTIVE' ? 'bg-blue-100 text-blue-800' : s.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+                          {s.status === 'ACTIVE' ? 'Đang chơi' : s.status === 'COMPLETED' ? 'Hoàn thành' : 'Đã hủy'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-semibold text-slate-900">{formatVND(s.totalAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              disabled={safeSessionPage <= 1}
+              onClick={() => setSessionPage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            >
+              Trước
+            </button>
+            <button
+              type="button"
+              disabled={safeSessionPage >= sessionTotalPages}
+              onClick={() => setSessionPage((p) => Math.min(sessionTotalPages, p + 1))}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            >
+              Sau
+            </button>
           </div>
         </div>
       </div>

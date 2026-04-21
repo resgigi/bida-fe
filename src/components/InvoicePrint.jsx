@@ -120,8 +120,8 @@ export default function InvoicePrint({ session, onClose }) {
       <style>{`
         @media print {
           @page {
-            margin: 2mm;
-            size: 80mm;
+            margin: 0;
+            size: 80mm auto;
           }
           html, body {
             height: auto !important;
@@ -147,10 +147,14 @@ export default function InvoicePrint({ session, onClose }) {
             margin: 0 !important;
           }
           #invoice-print-shell {
-            width: 76mm !important;
-            max-width: 76mm !important;
+            width: 80mm !important;
+            max-width: 80mm !important;
             margin: 0 auto !important;
             border: 0 !important;
+          }
+          #invoice-print-area > * {
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           #invoice-print-portal .no-print {
             display: none !important;
@@ -163,6 +167,7 @@ export default function InvoicePrint({ session, onClose }) {
           #invoice-print-area {
             overflow: visible !important;
             max-height: none !important;
+            padding: 2mm !important;
           }
         }
       `}</style>

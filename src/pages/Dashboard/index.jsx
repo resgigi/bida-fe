@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   HiOutlineViewGrid,
   HiOutlineCash,
@@ -8,9 +9,13 @@ import {
   HiOutlineTrendingUp,
   HiOutlineTrendingDown,
   HiOutlineRefresh,
+  HiOutlineTrash,
+  HiOutlineExclamation,
 } from 'react-icons/hi';
 import api from '../../services/api';
 import { formatVND } from '../../utils/format';
+import Modal from '../../components/Modal';
+import useAuthStore from '../../stores/authStore';
 
 const PRESETS = [
   { id: 'today', label: 'Hôm nay' },
@@ -61,6 +66,111 @@ function StatCard({ icon: Icon, label, value, sub, accent }) {
   );
 }
 
+function DeleteDataModal({ type, label, onClose }) {
+  const { user } = useAuthStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultFrom = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  })();
+  const [useRange, setUseRange] = useState(false);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(today);
+  const isSessionDelete = type === 'sessions';
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.delete(`/admin/data/${type}`, {
+        data: {
+          password,
+          confirmation,
+          ...(isSessionDelete && useRange ? { from, to } : {}),
+        },
+      }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries();
+      onClose();
+      toast.success(res.data.message || 'Đã xóa dữ liệu');
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Lỗi');
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-lg bg-red-50 p-4">
+        <HiOutlineExclamation className="mt-0.5 h-6 w-6 shrink-0 text-red-600" />
+        <div>
+          <p className="text-sm font-medium text-red-800">Hành động không thể hoàn tác!</p>
+          <p className="mt-1 text-sm text-red-600">Bạn đang xóa: <strong>{label}</strong></p>
+        </div>
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">Nhập mật khẩu xác nhận</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
+        />
+      </div>
+      {!isSuperAdmin && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Nhập &quot;XOA TAT CA&quot; để xác nhận</label>
+          <input
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="XOA TAT CA"
+          />
+        </div>
+      )}
+      {isSessionDelete && (
+        <div className="rounded-lg border border-gray-200 p-3">
+          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input type="checkbox" checked={useRange} onChange={(e) => setUseRange(e.target.checked)} className="rounded" />
+            Xóa theo kỳ (không xóa toàn bộ)
+          </label>
+          {useRange && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Từ ngày</label>
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Đến ngày</label>
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500" />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="flex justify-end gap-3 pt-2">
+        <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Hủy</button>
+        <button
+          type="button"
+          onClick={() => mutation.mutate()}
+          disabled={
+            mutation.isPending
+            || (!isSuperAdmin && confirmation !== 'XOA TAT CA')
+            || !password
+            || (isSessionDelete && useRange && (!from || !to))
+          }
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Đang xóa...' : 'Xóa'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const PRODUCT_PAGE_SIZE = 12;
   const SESSION_PAGE_SIZE = 10;
@@ -80,6 +190,13 @@ export default function DashboardPage() {
   const [productPage, setProductPage] = useState(1);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionPage, setSessionPage] = useState(1);
+  const [deleteModal, setDeleteModal] = useState(null);
+  const deleteActions = [
+    { type: 'sessions', label: 'Tất cả phiên chơi', desc: 'Xóa toàn bộ lịch sử phiên chơi và đơn hàng' },
+    { type: 'products', label: 'Tất cả sản phẩm', desc: 'Xóa toàn bộ sản phẩm và danh mục' },
+    { type: 'rooms', label: 'Tất cả phòng', desc: 'Xóa toàn bộ phòng bàn' },
+    { type: 'all', label: 'TOÀN BỘ DỮ LIỆU', desc: 'Reset hệ thống về trạng thái ban đầu (trừ tài khoản, xóa luôn nhật ký thao tác)' },
+  ];
   const statsParams = useMemo(
     () => buildParams(preset, customFrom, customTo, 'auto'),
     [preset, customFrom, customTo]
@@ -393,6 +510,34 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <div className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm ring-1 ring-red-100">
+        <h3 className="mb-1 text-base font-semibold text-red-800">Xóa dữ liệu</h3>
+        <p className="mb-4 text-sm text-red-600">Cẩn thận! Dữ liệu đã xóa không thể khôi phục.</p>
+        <div className="space-y-3">
+          {deleteActions.map((action) => (
+            <div key={action.type} className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">{action.label}</p>
+                <p className="text-xs text-gray-500">{action.desc}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteModal(action)}
+                className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-100"
+              >
+                <HiOutlineTrash className="h-4 w-4" /> Xóa
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {deleteModal && (
+        <Modal isOpen onClose={() => setDeleteModal(null)} title={`Xóa ${deleteModal.label}`}>
+          <DeleteDataModal type={deleteModal.type} label={deleteModal.label} onClose={() => setDeleteModal(null)} />
+        </Modal>
+      )}
     </div>
   );
 }

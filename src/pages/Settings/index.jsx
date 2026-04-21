@@ -7,12 +7,31 @@ import useAuthStore from '../../stores/authStore';
 import Modal from '../../components/Modal';
 
 function DeleteDataModal({ type, label, onClose }) {
+  const { user } = useAuthStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultFrom = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  })();
+  const isSessionDelete = type === 'sessions';
+  const [useRange, setUseRange] = useState(false);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(today);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () => api.delete(`/admin/data/${type}`, { data: { password, confirmation } }),
+    mutationFn: () =>
+      api.delete(`/admin/data/${type}`, {
+        data: {
+          password,
+          confirmation,
+          ...(isSessionDelete && useRange ? { from, to } : {}),
+        },
+      }),
     onSuccess: (res) => {
       toast.success(res.data.message);
       queryClient.invalidateQueries();
@@ -28,10 +47,26 @@ function DeleteDataModal({ type, label, onClose }) {
         <div><p className="text-sm font-medium text-red-800">Hành động không thể hoàn tác!</p><p className="text-sm text-red-600 mt-1">Bạn đang xóa: <strong>{label}</strong></p></div>
       </div>
       <div><label className="block text-sm font-medium text-gray-700 mb-1">Nhập mật khẩu xác nhận</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 outline-none text-sm" /></div>
-      <div><label className="block text-sm font-medium text-gray-700 mb-1">Nhập &quot;XOA TAT CA&quot; để xác nhận</label><input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 outline-none text-sm" placeholder="XOA TAT CA" /></div>
+      {!isSuperAdmin && (
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">Nhập &quot;XOA TAT CA&quot; để xác nhận</label><input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 outline-none text-sm" placeholder="XOA TAT CA" /></div>
+      )}
+      {isSessionDelete && (
+        <div className="rounded-lg border border-gray-200 p-3">
+          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input type="checkbox" checked={useRange} onChange={(e) => setUseRange(e.target.checked)} className="rounded" />
+            Xóa theo kỳ (không xóa toàn bộ)
+          </label>
+          {useRange && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Từ ngày</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 outline-none text-sm" /></div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Đến ngày</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 outline-none text-sm" /></div>
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex gap-3 justify-end pt-2">
         <button onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium">Hủy</button>
-        <button onClick={() => mutation.mutate()} disabled={mutation.isPending || confirmation !== 'XOA TAT CA' || !password} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 text-sm font-medium">
+        <button onClick={() => mutation.mutate()} disabled={mutation.isPending || (!isSuperAdmin && confirmation !== 'XOA TAT CA') || !password || (isSessionDelete && useRange && (!from || !to))} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 text-sm font-medium">
           {mutation.isPending ? 'Đang xóa...' : 'Xóa'}
         </button>
       </div>

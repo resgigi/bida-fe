@@ -1,0 +1,20 @@
+{
+  "appId": "com.lasvegas434.pos",
+  "appName": "KARAOKE LASVEGAS 434",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#1a1a2e"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#1a1a2e",
+      "showSpinner": false
+    }
+  }
+}

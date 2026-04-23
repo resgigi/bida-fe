@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   HiOutlinePrinter, HiOutlineX, HiOutlineWifi,
   HiOutlineStatusOnline, HiOutlineChip,
@@ -8,10 +10,19 @@ import {
 import api from '../services/api';
 import { formatVND, formatDateTime } from '../utils/format';
 import {
-  isSunmiDevice, isBluetoothSupported,
-  printSunmi, printBluetooth, printWifi,
+  isSunmiDevice, isBluetoothSupported, isCapacitorAndroid,
+  printSunmi, printBluetooth, printWifi, printAndroidThermalBluetooth,
   getConnectedDeviceName, disconnectBluetooth,
 } from '../utils/posPrint';
+import { thermalListPaired } from '../plugins/thermalPrinter';
+import {
+  PRINT_METHOD,
+  getDefaultPrintMethod,
+  defaultMethodLabel,
+  getWifiPrinters,
+  getSelectedWifiPrinterId,
+  setSelectedWifiPrinterId,
+} from '../utils/posPrintSettings';
 
 const PAYMENT_LABEL = { CASH: 'Tiền mặt', TRANSFER: 'Chuyển khoản', CARD: 'Thẻ' };
 
@@ -138,15 +149,34 @@ function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
 export default function InvoicePrint({ session, onClose }) {
   const [printStatus, setPrintStatus] = useState(''); // '', 'loading', 'ok', 'error'
   const [statusMsg, setStatusMsg] = useState('');
-  const [wifiUrl, setWifiUrl] = useState(() => localStorage.getItem('pos_wifi_url') || 'ws://192.168.1.100:9100');
-  const [showWifiInput, setShowWifiInput] = useState(false);
+  const [wifiPrinters, setWifiPrinters] = useState(() => getWifiPrinters());
+  const [wifiSelectedId, setWifiSelectedIdState] = useState(() => {
+    const list = getWifiPrinters();
+    const sid = getSelectedWifiPrinterId();
+    return (list.find((p) => p.id === sid) || list[0])?.id || '';
+  });
   const [connectedName, setConnectedName] = useState(() => getConnectedDeviceName());
+  const [androidPickerOpen, setAndroidPickerOpen] = useState(false);
+  const [androidDevices, setAndroidDevices] = useState([]);
+  const [androidPickerLoading, setAndroidPickerLoading] = useState(false);
+  const [savedAndroidPrinter, setSavedAndroidPrinter] = useState(
+    () => localStorage.getItem('pos_bt_name') || localStorage.getItem('pos_bt_mac') || '',
+  );
 
   const { data: settings = {} } = useQuery({
     queryKey: ['settings'],
     queryFn: () => api.get('/admin/settings').then((r) => r.data.data),
     staleTime: 5 * 60 * 1000,
   });
+
+  useEffect(() => {
+    const list = getWifiPrinters();
+    setWifiPrinters(list);
+    const sid = getSelectedWifiPrinterId();
+    const pick = list.find((p) => p.id === sid) || list[0];
+    if (pick) setWifiSelectedIdState(pick.id);
+    else setWifiSelectedIdState('');
+  }, [session?.id]);
 
   if (!session) return null;
 
@@ -180,12 +210,103 @@ export default function InvoicePrint({ session, onClose }) {
   });
 
   const handleWifiPrint = () => {
-    localStorage.setItem('pos_wifi_url', wifiUrl);
-    withStatus(() => printWifi({ ...printArgs, wsUrl: wifiUrl }));
+    const list = getWifiPrinters();
+    if (!list.length) {
+      toast.error('Chưa có máy in WiFi. Vào Cài đặt → In hóa đơn để thêm.');
+      return;
+    }
+    const pick = list.find((p) => p.id === wifiSelectedId) || list[0];
+    withStatus(() => printWifi({ ...printArgs, wsUrl: pick.wsUrl }));
+  };
+
+  const onWifiSelectChange = (id) => {
+    setWifiSelectedIdState(id);
+    setSelectedWifiPrinterId(id);
+  };
+
+  const runDefaultPrint = () => {
+    const m = getDefaultPrintMethod();
+    if (m === PRINT_METHOD.BROWSER) {
+      window.print();
+      return;
+    }
+    if (m === PRINT_METHOD.SUNMI) {
+      if (!sunmi) {
+        toast.error('Không phát hiện máy Sunmi. Chọn cách in khác hoặc đổi mặc định trong Cài đặt.');
+        return;
+      }
+      handleSunmiPrint();
+      return;
+    }
+    if (m === PRINT_METHOD.BLUETOOTH_WEB) {
+      if (!btSupported) {
+        toast.error('Trình duyệt không hỗ trợ Web Bluetooth.');
+        return;
+      }
+      handleBluetoothPrint();
+      return;
+    }
+    if (m === PRINT_METHOD.WIFI) {
+      const list = getWifiPrinters();
+      if (!list.length) {
+        toast.error('Chưa có máy in WiFi. Vào Cài đặt để thêm.');
+        return;
+      }
+      const sid = getSelectedWifiPrinterId();
+      const pick = list.find((p) => p.id === sid) || list[0];
+      withStatus(() => printWifi({ ...printArgs, wsUrl: pick.wsUrl }));
+      return;
+    }
+    if (m === PRINT_METHOD.ANDROID_THERMAL) {
+      if (!capAndroid) {
+        toast.error('In Bluetooth SPP chỉ dùng trên app Android (bản cài từ APK).');
+        return;
+      }
+      handleAndroidThermalPrint();
+    }
+  };
+
+  const loadAndroidPaired = async () => {
+    setAndroidPickerLoading(true);
+    setAndroidDevices([]);
+    try {
+      const list = await thermalListPaired();
+      setAndroidDevices(Array.isArray(list) ? list : []);
+    } catch (e) {
+      setStatusMsg(e.message || 'Không đọc được máy Bluetooth');
+      setPrintStatus('error');
+    } finally {
+      setAndroidPickerLoading(false);
+    }
+  };
+
+  const openAndroidPrinterPicker = () => {
+    setAndroidPickerOpen(true);
+    loadAndroidPaired();
+  };
+
+  const handleAndroidThermalPrint = () => {
+    const mac = localStorage.getItem('pos_bt_mac');
+    if (!mac) {
+      openAndroidPrinterPicker();
+      return;
+    }
+    withStatus(() => printAndroidThermalBluetooth({ address: mac, ...printArgs }));
+  };
+
+  const pickAndroidDevice = (d) => {
+    const name = d.name || d.address || '';
+    localStorage.setItem('pos_bt_mac', d.address);
+    localStorage.setItem('pos_bt_name', name);
+    setSavedAndroidPrinter(name || d.address);
+    setAndroidPickerOpen(false);
+    withStatus(() => printAndroidThermalBluetooth({ address: d.address, ...printArgs }));
   };
 
   const sunmi = isSunmiDevice();
   const btSupported = isBluetoothSupported();
+  const capAndroid = isCapacitorAndroid();
+  const defaultMethod = getDefaultPrintMethod();
 
   const node = (
     <div
@@ -232,7 +353,7 @@ export default function InvoicePrint({ session, onClose }) {
             </button>
           )}
 
-          {/* Bluetooth */}
+          {/* Bluetooth (Web Bluetooth — Chrome; trên WebView Android thường không dùng được) */}
           {btSupported && (
             <button
               type="button"
@@ -249,35 +370,74 @@ export default function InvoicePrint({ session, onClose }) {
             </button>
           )}
 
-          {/* WiFi / LAN */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowWifiInput((v) => !v)}
-              className="flex w-full items-center gap-3 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 active:scale-95 transition-transform"
-            >
+          {/* Android POS — Bluetooth cổ điển (SPP), ghép đôi máy in trong Cài đặt hệ thống */}
+          {capAndroid && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-2">
+              <button
+                type="button"
+                onClick={handleAndroidThermalPrint}
+                disabled={printStatus === 'loading'}
+                className="flex w-full items-center gap-3 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700 active:scale-95 transition-transform disabled:opacity-60"
+              >
+                <HiOutlinePrinter className="h-5 w-5 shrink-0" />
+                <span className="flex-1 text-left">
+                  In máy in nhiệt (Android)
+                  {savedAndroidPrinter && (
+                    <span className="ml-2 block text-xs font-normal text-amber-100">
+                      Đang dùng: {savedAndroidPrinter}
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-amber-100">SPP</span>
+              </button>
+              <button
+                type="button"
+                onClick={openAndroidPrinterPicker}
+                className="mt-2 w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-50"
+              >
+                Chọn / đổi máy in đã ghép đôi
+              </button>
+              <p className="mt-1 px-1 text-[11px] leading-snug text-amber-900/80">
+                Ghép đôi máy in (Bluetooth) trong Cài đặt Android trước. Hỗ trợ máy in nhiệt dùng Bluetooth cổ điển (Xprinter, Rongta…).
+              </p>
+            </div>
+          )}
+
+          {/* WiFi / LAN — danh sách lưu trong Cài đặt */}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2">
+            <div className="mb-2 flex items-center gap-2 text-emerald-900">
               <HiOutlineWifi className="h-5 w-5 shrink-0" />
-              <span className="flex-1 text-left">In WiFi / LAN</span>
-              <span className="text-xs text-emerald-200">WebSocket</span>
-            </button>
-            {showWifiInput && (
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={wifiUrl}
-                  onChange={(e) => setWifiUrl(e.target.value)}
-                  placeholder="ws://192.168.1.x:9100"
-                  className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-emerald-500 focus:outline-none"
-                />
+              <span className="text-sm font-semibold">In WiFi / LAN (WebSocket)</span>
+            </div>
+            {wifiPrinters.length === 0 ? (
+              <p className="px-1 text-xs text-emerald-900/80">
+                Chưa có máy in nào.{' '}
+                <Link to="/settings" className="font-medium underline">Thêm tại Cài đặt</Link>.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  value={wifiSelectedId}
+                  onChange={(e) => onWifiSelectChange(e.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-gray-900"
+                >
+                  {wifiPrinters.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} — {p.wsUrl}</option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={handleWifiPrint}
                   disabled={printStatus === 'loading'}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                  className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   In
                 </button>
               </div>
             )}
+            <p className="mt-1 px-1 text-[11px] text-emerald-900/70">
+              Quản lý tên + URL: <Link to="/settings" className="underline">Cài đặt → In hóa đơn</Link>
+            </p>
           </div>
 
           {/* Status message */}
@@ -301,6 +461,45 @@ export default function InvoicePrint({ session, onClose }) {
           <ReceiptBody session={session} storeName={storeName} storeAddr={storeAddr} storePhone={storePhone} />
         </div>
       </div>
+
+      {androidPickerOpen && (
+        <div className="no-print fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center">
+          <div className="max-h-[70vh] w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <h3 className="text-sm font-semibold text-gray-800">Chọn máy in Bluetooth</h3>
+              <button
+                type="button"
+                onClick={() => setAndroidPickerOpen(false)}
+                className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
+              >
+                <HiOutlineX className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto p-2">
+              {androidPickerLoading && (
+                <p className="px-3 py-4 text-center text-sm text-gray-500">Đang tải danh sách…</p>
+              )}
+              {!androidPickerLoading && androidDevices.length === 0 && (
+                <p className="px-3 py-4 text-center text-sm text-gray-600">
+                  Chưa có thiết bị đã ghép đôi. Vào Cài đặt → Bluetooth → ghép đôi máy in, rồi mở lại.
+                </p>
+              )}
+              {!androidPickerLoading &&
+                androidDevices.map((d) => (
+                  <button
+                    key={d.address}
+                    type="button"
+                    onClick={() => pickAndroidDevice(d)}
+                    className="mb-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-left text-sm hover:border-amber-400 hover:bg-amber-50"
+                  >
+                    <div className="font-medium text-gray-900">{d.name || 'Máy in'}</div>
+                    <div className="text-xs text-gray-500">{d.address}</div>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media print {

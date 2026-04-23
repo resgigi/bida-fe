@@ -6,7 +6,9 @@
  *  4. window.print() fallback (standard browser print dialog)
  */
 
+import { Capacitor } from '@capacitor/core';
 import { buildReceipt } from './escpos';
+import { thermalConnect, thermalDisconnect, thermalWriteBytes } from '../plugins/thermalPrinter';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -25,6 +27,26 @@ export function isSunmiDevice() {
 
 export function isBluetoothSupported() {
   return typeof navigator !== 'undefined' && !!navigator.bluetooth;
+}
+
+/** Máy POS Android (Capacitor): in qua Bluetooth cổ điển SPP — ghép đôi máy in trong Cài đặt Android trước. */
+export function isCapacitorAndroid() {
+  return typeof Capacitor !== 'undefined' && Capacitor.getPlatform() === 'android';
+}
+
+/**
+ * In ESC/POS qua plugin native (Bluetooth đã ghép đôi).
+ * @param {string} address MAC, ví dụ "00:11:22:33:44:55"
+ */
+export async function printAndroidThermalBluetooth({ address, storeName, storeAddr, storePhone, session, formatVND, formatDT }) {
+  if (!address) throw new Error('Chưa chọn máy in Bluetooth');
+  const data = buildReceipt({ storeName, storeAddr, storePhone, session, formatVND, formatDT });
+  await thermalConnect(address);
+  try {
+    await thermalWriteBytes(data);
+  } finally {
+    await thermalDisconnect();
+  }
 }
 
 // Bluetooth service/characteristic UUIDs common to thermal receipt printers

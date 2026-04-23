@@ -5,6 +5,17 @@ import { HiOutlineTrash, HiOutlineExclamation } from 'react-icons/hi';
 import api from '../../services/api';
 import useAuthStore from '../../stores/authStore';
 import Modal from '../../components/Modal';
+import {
+  PRINT_METHOD,
+  getDefaultPrintMethod,
+  setDefaultPrintMethod,
+  defaultMethodLabel,
+  getWifiPrinters,
+  addWifiPrinter,
+  removeWifiPrinter,
+  getSelectedWifiPrinterId,
+  setSelectedWifiPrinterId,
+} from '../../utils/posPrintSettings';
 
 function DeleteDataModal({ type, label, onClose }) {
   const { user } = useAuthStore();
@@ -108,6 +119,168 @@ function AuditLogsSection() {
   );
 }
 
+function PrintSettingsSection() {
+  const [defaultMethod, setDefaultMethodState] = useState(getDefaultPrintMethod);
+  const [printers, setPrinters] = useState(getWifiPrinters);
+  const [wifiPick, setWifiPick] = useState(() => getSelectedWifiPrinterId() || getWifiPrinters()[0]?.id || '');
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('ws://192.168.1.100:9100');
+
+  const refresh = () => {
+    const list = getWifiPrinters();
+    setPrinters(list);
+    const sid = getSelectedWifiPrinterId();
+    if (sid && list.some((p) => p.id === sid)) setWifiPick(sid);
+    else if (list[0]) {
+      setWifiPick(list[0].id);
+      setSelectedWifiPrinterId(list[0].id);
+    } else setWifiPick('');
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const onDefaultChange = (m) => {
+    setDefaultPrintMethod(m);
+    setDefaultMethodState(m);
+    toast.success(`Đã đặt in mặc định: ${defaultMethodLabel(m)}`);
+  };
+
+  const onWifiPickChange = (id) => {
+    setWifiPick(id);
+    setSelectedWifiPrinterId(id);
+    toast.success('Đã chọn máy in WiFi mặc định');
+  };
+
+  const onAddPrinter = () => {
+    try {
+      addWifiPrinter({ name: newName, wsUrl: newUrl });
+      setNewName('');
+      refresh();
+      toast.success('Đã thêm máy in');
+    } catch (e) {
+      toast.error(e.message || 'Lỗi');
+    }
+  };
+
+  const onRemove = (id) => {
+    removeWifiPrinter(id);
+    refresh();
+    toast.success('Đã xóa');
+  };
+
+  const methodOptions = [
+    { value: PRINT_METHOD.BROWSER, label: defaultMethodLabel(PRINT_METHOD.BROWSER) },
+    { value: PRINT_METHOD.WIFI, label: defaultMethodLabel(PRINT_METHOD.WIFI) },
+    { value: PRINT_METHOD.BLUETOOTH_WEB, label: defaultMethodLabel(PRINT_METHOD.BLUETOOTH_WEB) },
+    { value: PRINT_METHOD.SUNMI, label: defaultMethodLabel(PRINT_METHOD.SUNMI) },
+    { value: PRINT_METHOD.ANDROID_THERMAL, label: `${defaultMethodLabel(PRINT_METHOD.ANDROID_THERMAL)} (app)` },
+  ];
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h3 className="text-base font-semibold mb-1">In hóa đơn (máy POS)</h3>
+      <p className="text-sm text-gray-500 mb-4">
+        Lưu trên trình duyệt thiết bị. Trên app Android vẫn dùng chung cài đặt này (localStorage WebView).
+      </p>
+
+      <div className="space-y-4 max-w-lg">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Cách in mặc định</label>
+          <p className="text-xs text-gray-500 mb-2">Khi mở bill, bấm &quot;In theo mặc định&quot; sẽ dùng lựa chọn này (nếu thiết bị hỗ trợ).</p>
+          <select
+            value={defaultMethod}
+            onChange={(e) => onDefaultChange(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
+          >
+            {methodOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-gray-800">Máy in WiFi / LAN (WebSocket)</h4>
+          </div>
+          <p className="text-xs text-gray-500">
+            Mỗi dòng: tên gợi nhớ + địa chỉ <code className="text-gray-700">ws://IP:9100</code> (theo print server của bạn).
+          </p>
+
+          {printers.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Máy mặc định khi in WiFi</label>
+              <select
+                value={wifiPick}
+                onChange={(e) => onWifiPickChange(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+              >
+                {printers.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} — {p.wsUrl}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <ul className="space-y-2 max-h-48 overflow-y-auto">
+            {printers.length === 0 && (
+              <li className="text-sm text-gray-400 py-2">Chưa có máy nào. Thêm bên dưới.</li>
+            )}
+            {printers.map((p) => (
+              <li key={p.id} className="flex items-start justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-gray-800 truncate">{p.name}</div>
+                  <div className="text-xs text-gray-500 break-all">{p.wsUrl}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRemove(p.id)}
+                  className="shrink-0 text-red-600 hover:text-red-800 text-xs font-medium"
+                >
+                  Xóa
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tên máy in</label>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="VD: Quầy 1"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">WebSocket URL</label>
+              <input
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                placeholder="ws://192.168.1.100:9100"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onAddPrinter}
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+          >
+            Thêm máy in
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-400">
+          App Android build riêng: xem thư mục <code className="text-gray-600">bidaktv/bida-fe-android</code> trong repo.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user } = useAuthStore();
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
@@ -199,6 +372,8 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      <PrintSettingsSection />
 
       {isSuperAdmin && (
         <div className="bg-white rounded-xl border border-red-200 p-5">

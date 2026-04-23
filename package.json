@@ -16,6 +16,7 @@
     "vite": "^8.0.4"
   },
   "dependencies": {
+    "@capacitor/core": "^6.2.0",
     "@tanstack/react-query": "^5.96.2",
     "axios": "^1.15.0",
     "date-fns": "^4.1.0",

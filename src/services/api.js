@@ -1,18 +1,31 @@
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
+const BASE_URL = `${API_URL}/api`;
 
-const api = axios.create({ baseURL: `${API_URL}/api` });
+const api = axios.create({ baseURL: BASE_URL });
+
+if (typeof window !== 'undefined') {
+  // Helpful when debugging Capacitor builds that may cache old web assets.
+  console.info('[api] baseURL =', BASE_URL);
+}
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('accessToken');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  console.info('[api][request]', config.method?.toUpperCase(), config.baseURL + config.url);
   return config;
 });
 
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
+    console.error('[api][error]', {
+      url: err.config?.baseURL ? `${err.config.baseURL}${err.config?.url || ''}` : err.config?.url,
+      status: err.response?.status,
+      data: err.response?.data,
+      message: err.message,
+    });
     if (err.response?.status === 401 && !err.config._retry) {
       err.config._retry = true;
       try {

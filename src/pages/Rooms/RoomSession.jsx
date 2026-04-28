@@ -26,6 +26,7 @@ export default function RoomSession({ room, session, onClose }) {
   const endingConfirmedRef = useRef(false);
   const [productQtyInput, setProductQtyInput] = useState({});
   const [completedForInvoice, setCompletedForInvoice] = useState(null);
+  const [tempReceiptSession, setTempReceiptSession] = useState(null);
   const [orderAdjustConfirm, setOrderAdjustConfirm] = useState(null);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -298,6 +299,21 @@ export default function RoomSession({ room, session, onClose }) {
                 className="mt-4 w-full py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 transition-colors"
               >
                 Kết thúc phiên
+              </button>
+              <button
+                onClick={() => setTempReceiptSession({
+                  id: `TEMP-${Date.now()}`,
+                  room,
+                  staff: currentSession.staff,
+                  startTime: session.startTime,
+                  orderItems,
+                  totalPlayAmount: playAmount,
+                  totalFoodAmount: foodAmount,
+                  totalAmount: playAmount + foodAmount,
+                })}
+                className="mt-2 w-full py-2.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-300 transition-colors"
+              >
+                In phiếu tạm tính
               </button>
               {endedForPayment && (
                 <button
@@ -655,6 +671,13 @@ export default function RoomSession({ room, session, onClose }) {
             setCompletedForInvoice(null);
             onClose();
           }}
+        />
+      )}
+
+      {tempReceiptSession && (
+        <InvoicePrint
+          session={tempReceiptSession}
+          onClose={() => setTempReceiptSession(null)}
         />
       )}
     </div>

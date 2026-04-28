@@ -10,23 +10,25 @@ const LF  = 0x0a;
 const COLS = 42; // characters per line at default font for 80mm
 
 const CMD = {
-  INIT:           [ESC, 0x40],
-  ALIGN_LEFT:     [ESC, 0x61, 0x00],
-  ALIGN_CENTER:   [ESC, 0x61, 0x01],
-  ALIGN_RIGHT:    [ESC, 0x61, 0x02],
-  BOLD_ON:        [ESC, 0x45, 0x01],
-  BOLD_OFF:       [ESC, 0x45, 0x00],
-  UNDERLINE_ON:   [ESC, 0x2d, 0x01],
-  UNDERLINE_OFF:  [ESC, 0x2d, 0x00],
-  SIZE_NORMAL:    [GS,  0x21, 0x00],
-  SIZE_2X_HEIGHT: [GS,  0x21, 0x01],
-  SIZE_2X_WIDTH:  [GS,  0x21, 0x10],
-  SIZE_2X:        [GS,  0x21, 0x11],
-  // UTF-8 code page (works on Xprinter, Rongta and most modern printers)
-  UTF8:           [ESC, 0x74, 0x2d],
+  INIT:             [ESC, 0x40],
+  ALIGN_LEFT:       [ESC, 0x61, 0x00],
+  ALIGN_CENTER:     [ESC, 0x61, 0x01],
+  ALIGN_RIGHT:      [ESC, 0x61, 0x02],
+  BOLD_ON:          [ESC, 0x45, 0x01],
+  BOLD_OFF:         [ESC, 0x45, 0x00],
+  UNDERLINE_ON:     [ESC, 0x2d, 0x01],
+  UNDERLINE_OFF:    [ESC, 0x2d, 0x00],
+  // Double-strike: prints each line twice — makes thermal text visibly darker
+  DOUBLE_STRIKE_ON:  [ESC, 0x47, 0x01],
+  DOUBLE_STRIKE_OFF: [ESC, 0x47, 0x00],
+  // Font size
+  SIZE_NORMAL:      [GS,  0x21, 0x00],
+  SIZE_2X_HEIGHT:  [GS,  0x21, 0x01],
+  SIZE_2X_WIDTH:    [GS,  0x21, 0x10],
+  SIZE_2X:          [GS,  0x21, 0x11],
   // Feed and partial cut
-  CUT:            [GS,  0x56, 0x42, 0x04],
-  FEED_LINES:     (n) => [ESC, 0x64, n],
+  CUT:              [GS,  0x56, 0x42, 0x04],
+  FEED_LINES:       (n) => [ESC, 0x64, n],
 };
 
 const enc = new TextEncoder();
@@ -61,7 +63,6 @@ function padStart(str, len) {
   return ' '.repeat(len - vis) + str;
 }
 
-// Vietnamese chars are 1 column wide on UTF-8 printers
 function visLen(str) {
   return [...str].length;
 }
@@ -79,13 +80,12 @@ function twoCol(left, right) {
 /**
  * Build a 4-column table row for order items:
  * name | qty | unitPrice | totalPrice
- * Name takes remaining space, others are fixed width.
  */
 function itemRow(name, qty, unit, total) {
-  const qtyW  = 3;  // "99"
-  const unitW = 10; // "99.000 đ"
-  const totW  = 10; // "999.000 đ"
-  const nameW = COLS - qtyW - unitW - totW - 3; // 3 spaces between cols
+  const qtyW  = 3;
+  const unitW = 10;
+  const totW  = 10;
+  const nameW = COLS - qtyW - unitW - totW - 3;
 
   const nameTrunc = [...name].slice(0, nameW).join('');
   return (
@@ -98,6 +98,8 @@ function itemRow(name, qty, unit, total) {
 
 /**
  * Main builder — returns Uint8Array of ESC/POS commands.
+ * ESC E (bold) + ESC G (double-strike) stay ON for the entire receipt
+ * to maximize print darkness on thermal printers.
  */
 export function buildReceipt({ storeName, storeAddr, storePhone, session, formatVND, formatDT }) {
   const buf = [];
@@ -105,13 +107,13 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
   const text = (s) => buf.push(...textBytes(s));
   const nl = (n = 1) => { for (let i = 0; i < n; i++) buf.push(LF); };
 
-  // Init + UTF-8 code page
-  w(CMD.INIT, CMD.UTF8);
+  // Init + keep ESC E (bold) + ESC G (double-strike) ON for entire bill
+  w(CMD.INIT, CMD.BOLD_ON, CMD.DOUBLE_STRIKE_ON);
 
   // ── Store header ──────────────────────────────────────────
-  w(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_2X);
+  w(CMD.ALIGN_CENTER, CMD.SIZE_2X);
   text(storeName); nl();
-  w(CMD.SIZE_NORMAL, CMD.BOLD_OFF);
+  w(CMD.SIZE_NORMAL);
   if (storeAddr) { text(storeAddr); nl(); }
   if (storePhone) { text('DT: ' + storePhone); nl(); }
   w(CMD.ALIGN_LEFT);
@@ -120,8 +122,8 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
   text(line()); nl();
 
   // ── Session info ──────────────────────────────────────────
-  text('Phong: '); w(CMD.BOLD_ON); text(session.room?.name || ''); w(CMD.BOLD_OFF); nl();
-  text('NV: ');    w(CMD.BOLD_ON); text(session.staff?.fullName || '—'); w(CMD.BOLD_OFF); nl();
+  text('Phong: '); text(session.room?.name || ''); nl();
+  text('NV: ');    text(session.staff?.fullName || '—'); nl();
   text('Bat dau: ' + formatDT(session.startTime)); nl();
   text('Ket thuc: ' + (session.endTime ? formatDT(session.endTime) : '—')); nl();
 
@@ -129,9 +131,7 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
 
   // ── Items table ───────────────────────────────────────────
   if ((session.orderItems || []).length > 0) {
-    w(CMD.BOLD_ON);
     text(itemRow('Mon', 'SL', 'Don gia', 'T.tien')); nl();
-    w(CMD.BOLD_OFF);
     text(line('-')); nl();
 
     for (const row of session.orderItems) {
@@ -140,7 +140,6 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
       const unit  = formatVND(row.unitPrice);
       const total = formatVND(row.totalPrice);
 
-      // If name is long, split to second line
       const nameWords = [...name];
       if (nameWords.length > COLS - 25) {
         const firstLine = nameWords.slice(0, COLS - 25).join('');
@@ -154,7 +153,7 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
     text(line('-')); nl();
   }
 
-  // ── Totals ────────────────────────────────────────────────
+  // ── Totals ───────────────────────────────────────────────
   text(twoCol('Tien gio', formatVND(session.totalPlayAmount))); nl();
 
   if ((session.discountAmount ?? 0) > 0) {
@@ -164,18 +163,16 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
 
   text(line()); nl();
 
-  // Total — double size
-  w(CMD.BOLD_ON, CMD.SIZE_2X_HEIGHT);
+  // Total — double-height + underline for maximum emphasis
+  w(CMD.SIZE_2X_HEIGHT, CMD.UNDERLINE_ON);
   text(twoCol('TONG CONG', formatVND(session.totalAmount))); nl();
-  w(CMD.SIZE_NORMAL, CMD.BOLD_OFF);
+  w(CMD.SIZE_NORMAL, CMD.UNDERLINE_OFF);
 
   text(line()); nl();
 
   const PAYMENT_LABEL = { CASH: 'Tien mat', TRANSFER: 'Chuyen khoan', CARD: 'The' };
   text(twoCol('Thanh toan', PAYMENT_LABEL[session.paymentMethod] || session.paymentMethod || '')); nl();
-  w(CMD.BOLD_ON);
   text(twoCol('Da thu', formatVND(session.paidAmount))); nl();
-  w(CMD.BOLD_OFF);
 
   if ((session.paidAmount ?? 0) > (session.totalAmount ?? 0)) {
     text(twoCol('Tien thua', formatVND((session.paidAmount ?? 0) - (session.totalAmount ?? 0)))); nl();
@@ -193,7 +190,8 @@ export function buildReceipt({ storeName, storeAddr, storePhone, session, format
   text('Cam on quy khach!'); nl();
   text('Hen gap lai!'); nl();
 
-  // Feed + cut
+  // Turn off enhanced modes, feed + cut
+  w(CMD.BOLD_OFF, CMD.DOUBLE_STRIKE_OFF);
   w(CMD.FEED_LINES(3), CMD.CUT);
 
   return new Uint8Array(buf);

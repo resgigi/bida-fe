@@ -27,18 +27,18 @@ import {
 const PAYMENT_LABEL = { CASH: 'Tiền mặt', TRANSFER: 'Chuyển khoản', CARD: 'Thẻ' };
 
 const S = {
-  root: { fontFamily: 'Arial, sans-serif', fontSize: '13px', color: '#111', lineHeight: '1.55', width: '100%' },
+  root: { fontFamily: 'Tahoma, Arial, sans-serif', fontSize: '13px', color: '#111', lineHeight: '1.55', width: '100%' },
   center: { textAlign: 'center' },
   storeName: { fontSize: '17px', fontWeight: '900', letterSpacing: '0.5px', color: '#111' },
   storeInfo: { fontSize: '11px', color: '#333', marginTop: '1px' },
   hr: { border: 'none', borderTop: '1px solid #111', margin: '5px 0' },
   hrDash: { border: 'none', borderTop: '1px dashed #555', margin: '5px 0' },
-  sessionLabel: { color: '#2563eb', fontSize: '12px' },
-  sessionValue: { fontWeight: '700', color: '#111', fontSize: '12px' },
+  sessionLabel: { fontWeight: '700', color: '#111', fontSize: '12px' },
+  sessionValue: { fontWeight: '900', color: '#111', fontSize: '12px' },
   sessionRow: { marginBottom: '1px' },
-  th: { fontWeight: '700', color: '#111', padding: '3px 2px', borderBottom: '1px solid #111', fontSize: '12px' },
-  td: { padding: '2px 2px', fontSize: '12px', color: '#111', verticalAlign: 'top' },
-  rowFlex: { display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: '12px', color: '#111' },
+  th: { fontWeight: '900', color: '#111', padding: '3px 2px', borderBottom: '1px solid #111', fontSize: '12px' },
+  td: { padding: '2px 2px', fontSize: '12px', color: '#111', verticalAlign: 'top', fontWeight: '700' },
+  rowFlex: { display: 'flex', justifyContent: 'space-between', padding: '1px 0', fontSize: '12px', color: '#111', fontWeight: '700' },
   totalRow: { display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '15px', fontWeight: '900', color: '#111' },
   footer: { textAlign: 'center', fontSize: '11px', color: '#444', marginTop: '4px' },
 };
@@ -48,15 +48,22 @@ function HR({ dashed }) {
 }
 
 function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
+  const isTempReceipt = String(session.id || '').startsWith('TEMP-');
   return (
     <div id="receipt-body" style={S.root}>
       <div style={S.center}>
-        <div style={S.storeName}>{storeName}</div>
-        {storeAddr && <div style={S.storeInfo}>{storeAddr}</div>}
-        {storePhone && <div style={S.storeInfo}>ĐT: {storePhone}</div>}
-        <div style={{ ...S.storeInfo, color: '#888', marginTop: '3px', fontSize: '10px' }}>
-          Mã phiên: {session.id}
-        </div>
+        {isTempReceipt ? (
+          <div style={{ ...S.storeName, marginBottom: '3px' }}>PHIẾU THU TẠM TÍNH</div>
+        ) : (
+          <>
+            <div style={S.storeName}>{storeName}</div>
+            {storeAddr && <div style={S.storeInfo}>{storeAddr}</div>}
+            {storePhone && <div style={S.storeInfo}>ĐT: {storePhone}</div>}
+            <div style={{ ...S.storeInfo, color: '#888', marginTop: '3px', fontSize: '10px' }}>
+              Mã phiên: {session.id}
+            </div>
+          </>
+        )}
       </div>
 
       <HR />
@@ -64,8 +71,8 @@ function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
       <div>
         <div style={S.sessionRow}><span style={S.sessionLabel}>Phòng: </span><span style={S.sessionValue}>{session.room?.name}</span></div>
         <div style={S.sessionRow}><span style={S.sessionLabel}>NV phụ trách: </span><span style={S.sessionValue}>{session.staff?.fullName || '—'}</span></div>
-        <div style={S.sessionRow}><span style={S.sessionLabel}>Bắt đầu: </span><span style={{ ...S.sessionValue, fontWeight: '400' }}>{formatDateTime(session.startTime)}</span></div>
-        <div style={S.sessionRow}><span style={S.sessionLabel}>Kết thúc: </span><span style={{ ...S.sessionValue, fontWeight: '400' }}>{session.endTime ? formatDateTime(session.endTime) : '—'}</span></div>
+        <div style={S.sessionRow}><span style={S.sessionLabel}>Bắt đầu: </span><span style={S.sessionValue}>{formatDateTime(session.startTime)}</span></div>
+        <div style={S.sessionRow}><span style={S.sessionLabel}>Kết thúc: </span><span style={S.sessionValue}>{session.endTime ? formatDateTime(session.endTime) : '—'}</span></div>
       </div>
 
       <HR />
@@ -86,8 +93,8 @@ function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
                 <tr key={row.id}>
                   <td style={{ ...S.td, textAlign: 'left' }}>{row.product?.name}</td>
                   <td style={{ ...S.td, textAlign: 'right' }}>{row.quantity}</td>
-                  <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatVND(row.unitPrice)}</td>
-                  <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: '600' }}>{formatVND(row.totalPrice)}</td>
+                  <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: '700' }}>{formatVND(row.unitPrice)}</td>
+                  <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: '900' }}>{formatVND(row.totalPrice)}</td>
                 </tr>
               ))}
             </tbody>
@@ -96,7 +103,7 @@ function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
         </>
       )}
 
-      <div style={{ ...S.rowFlex, color: '#555' }}>
+      <div style={{ ...S.rowFlex, fontWeight: '900', fontSize: '14px' }}>
         <span>Tiền giờ</span>
         <span style={{ color: '#111' }}>{formatVND(session.totalPlayAmount)}</span>
       </div>
@@ -117,10 +124,10 @@ function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
       <HR />
 
       <div style={S.rowFlex}>
-        <span style={{ color: '#555' }}>Thanh toán</span>
-        <span>{PAYMENT_LABEL[session.paymentMethod] || session.paymentMethod}</span>
+        <span>Thanh toán</span>
+        <span style={{ color: '#111' }}>{PAYMENT_LABEL[session.paymentMethod] || session.paymentMethod}</span>
       </div>
-      <div style={{ ...S.rowFlex, fontWeight: '700' }}>
+      <div style={{ ...S.rowFlex, fontWeight: '900' }}>
         <span>Đã thu</span>
         <span>{formatVND(session.paidAmount)}</span>
       </div>

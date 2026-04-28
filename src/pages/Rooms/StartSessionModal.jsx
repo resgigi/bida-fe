@@ -5,7 +5,7 @@ import api from '../../services/api';
 import useAuthStore from '../../stores/authStore';
 import Modal from '../../components/Modal';
 
-export default function StartSessionModal({ room, onClose }) {
+export default function StartSessionModal({ room, onClose, onSessionStarted }) {
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [staffId, setStaffId] = useState(user?.id || '');
@@ -25,10 +25,15 @@ export default function StartSessionModal({ room, onClose }) {
 
   const startMutation = useMutation({
     mutationFn: () => api.post('/sessions/start', { roomId: room.id, staffId }),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      const sessionData = response.data.data;
       queryClient.invalidateQueries({ queryKey: ['rooms'] });
       toast.success('Đã mở phiên chơi');
       onClose();
+      // Call callback with session data to navigate to detail
+      if (onSessionStarted) {
+        onSessionStarted(sessionData);
+      }
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Không mở được phiên'),
   });

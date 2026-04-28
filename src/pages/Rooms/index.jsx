@@ -32,6 +32,7 @@ function RoomTimer({ startTime }) {
 export default function RoomsPage() {
   const [tab, setTab] = useState('');
   const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedSession, setSelectedSession] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editRoom, setEditRoom] = useState(null);
   const [deleteRoom, setDeleteRoom] = useState(null);
@@ -55,8 +56,19 @@ export default function RoomsPage() {
   const handleRoomClick = (room) => {
     if (room.status === 'IN_USE' && room.sessions?.length > 0) {
       setSelectedRoom(room);
+      setSelectedSession(room.sessions[0]);
     } else if (room.status === 'AVAILABLE') {
       setStartRoom(room);
+    }
+  };
+
+  // Callback when session is started - auto navigate to detail
+  const handleSessionStarted = (sessionData) => {
+    // Find the room that was just used
+    const room = rooms.find(r => r.id === sessionData.roomId);
+    if (room) {
+      setSelectedRoom(room);
+      setSelectedSession(sessionData);
     }
   };
 
@@ -153,8 +165,16 @@ export default function RoomsPage() {
         </div>
       )}
 
-      {selectedRoom && (
-        <RoomSession room={selectedRoom} session={selectedRoom.sessions[0]} onClose={() => { setSelectedRoom(null); queryClient.invalidateQueries({ queryKey: ['rooms'] }); }} />
+      {selectedRoom && selectedSession && (
+        <RoomSession 
+          room={selectedRoom} 
+          session={selectedSession} 
+          onClose={() => { 
+            setSelectedRoom(null); 
+            setSelectedSession(null); 
+            queryClient.invalidateQueries({ queryKey: ['rooms'] }); 
+          }} 
+        />
       )}
 
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={editRoom ? 'Sửa phòng' : 'Thêm phòng'}>
@@ -162,7 +182,11 @@ export default function RoomsPage() {
       </Modal>
 
       {startRoom && (
-        <StartSessionModal room={startRoom} onClose={() => { setStartRoom(null); queryClient.invalidateQueries({ queryKey: ['rooms'] }); }} />
+        <StartSessionModal 
+          room={startRoom} 
+          onClose={() => { setStartRoom(null); queryClient.invalidateQueries({ queryKey: ['rooms'] }); }} 
+          onSessionStarted={handleSessionStarted}
+        />
       )}
 
       <ConfirmDialog

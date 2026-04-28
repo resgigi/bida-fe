@@ -180,7 +180,7 @@ export default function InvoicePrint({ session, onClose }) {
 
   if (!session) return null;
 
-  const storeName = settings.storeName || 'KARAOKE LASVEGAS 434';
+  const storeName = settings.storeName || 'PHẦN MỀM TÍNH TIỀN';
   const storeAddr = settings.storeAddress || '';
   const storePhone = settings.storePhone || '';
 

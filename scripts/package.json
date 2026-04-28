@@ -1,0 +1,10 @@
+{
+  "name": "wifi-print-server",
+  "private": true,
+  "scripts": {
+    "start": "node wifi-print-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

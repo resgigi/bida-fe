@@ -236,34 +236,79 @@ export function getConnectedDeviceName() {
 
 // ─────────────────────────────────────────────────────────────
 // 3. WiFi / LAN print server
-//    Requires a tiny WebSocket print server on the LAN.
-//    e.g., use `node ws-print-server.js` — see README.
+//    Requires `scripts/wifi-print-server.js` running on a
+//    computer on the same network as the thermal printer.
+//    Usage:
+//      1. Run `scripts/start-print-server.bat` on the PC
+//      2. Enter the PC's LAN IP and port 9101
+//      3. In app Settings → add printer with:
+//         ws://<PC-LAN-IP>:9101
 // ─────────────────────────────────────────────────────────────
 
 export async function printWifi({ wsUrl, storeName, storeAddr, storePhone, session, formatVND, formatDT }) {
   const data = buildReceipt({ storeName, storeAddr, storePhone, session, formatVND, formatDT });
 
+  if (!wsUrl) throw new Error('Chưa có địa chỉ máy in WiFi. Vào Cài đặt để thêm.');
+
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
+    let ws;
+    let settled = false;
+    const TIMEOUT = 8000;
+
+    const finish = (err, val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (ws) { ws.onerror = null; ws.onopen = null; ws.onmessage = null; try { ws.close(); } catch {} }
+      if (err) reject(err);
+      else resolve(val);
+    };
+
+    const timer = setTimeout(() => {
+      finish(new Error(`Không kết nối được máy in WiFi (${wsUrl})\n\nKiểm tra:\n1. Print server đã bật chưa?\n2. Địa chỉ IP có đúng máy tính chạy server không?\n3. Tường lửa có chặn cổng WebSocket không?`), undefined);
+    }, TIMEOUT);
+
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (e) {
+      return finish(new Error(`Địa chỉ WebSocket không hợp lệ: ${wsUrl}`));
+    }
+
     ws.binaryType = 'arraybuffer';
-    const timeout = setTimeout(() => {
-      ws.close();
-      reject(new Error('Không kết nối được máy in WiFi (timeout 5s)'));
-    }, 5000);
 
     ws.onopen = () => {
-      ws.send(data.buffer);
+      console.debug('[printWifi] connected, sending', data.byteLength, 'bytes');
+      try {
+        ws.send(data.buffer);
+      } catch (e) {
+        finish(new Error('Lỗi gửi dữ liệu tới máy in'));
+      }
     };
+
     ws.onmessage = (e) => {
-      clearTimeout(timeout);
-      ws.close();
-      const msg = typeof e.data === 'string' ? e.data : 'ok';
-      if (msg.startsWith('err')) reject(new Error(msg));
-      else resolve();
+      const msg = typeof e.data === 'string' ? e.data : '';
+      console.debug('[printWifi] server reply:', msg);
+      if (msg.startsWith('err')) {
+        finish(new Error(`Máy in báo lỗi: ${msg}`));
+      } else {
+        finish(null, undefined);
+      }
     };
-    ws.onerror = (e) => {
-      clearTimeout(timeout);
-      reject(new Error('Lỗi kết nối WiFi print server'));
+
+    ws.onerror = () => {
+      // onerror fires before onclose; give onclose a tick to fire first
+      setTimeout(() => {
+        if (!settled) {
+          finish(new Error(`Không kết nối được ${wsUrl}\n\nHãy đảm bảo:\n• Print server đang chạy trên máy tính cùng mạng\n• Địa chỉ IP trong Cài đặt là IP của MÁY TÍNH (không phải máy in)\n• Tường lửa cho phép cổng WebSocket`), undefined);
+        }
+      }, 50);
+    };
+
+    ws.onclose = () => {
+      // If we got here without settling, the server closed without reply — that's ok for raw TCP
+      if (!settled) {
+        setTimeout(() => finish(null, undefined), 200);
+      }
     };
   });
 }

@@ -32,8 +32,8 @@ export default function LoginPage() {
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl font-bold text-white">LV</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">KARAOKE LASVEGAS 434</h1>
-            <p className="text-gray-500 mt-1">Phần mềm quản lý karaoke</p>
+            <h1 className="text-2xl font-bold text-gray-800">PHẦN MỀM TÍNH TIỀN</h1>
+            <p className="text-gray-500 mt-1">Phần mềm tính tiền</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>

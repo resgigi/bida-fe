@@ -31,7 +31,7 @@ export default function Layout() {
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="h-16 flex items-center gap-3 px-6 border-b border-gray-200">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">LV</div>
-          <span className="font-bold text-lg text-gray-800">KARAOKE LASVEGAS 434</span>
+          <span className="font-bold text-lg text-gray-800">PHẦN MỀM TÍNH TIỀN</span>
         </div>
         <nav className="p-4 space-y-1 flex-1">
           {filtered.map((item) => (
@@ -72,7 +72,7 @@ export default function Layout() {
           <button className="lg:hidden p-2 rounded-lg hover:bg-gray-100" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <HiOutlineX className="w-6 h-6" /> : <HiOutlineMenu className="w-6 h-6" />}
           </button>
-          <h1 className="text-lg font-semibold text-gray-800">KARAOKE LASVEGAS 434</h1>
+          <h1 className="text-lg font-semibold text-gray-800">PHẦN MỀM TÍNH TIỀN</h1>
         </header>
         <main className="flex-1 p-4 lg:p-6 overflow-auto">
           <Outlet />

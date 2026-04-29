@@ -17,6 +17,20 @@ import {
   setSelectedWifiPrinterId,
 } from '../../utils/posPrintSettings';
 
+const TIMEZONES = [
+  { value: 'Asia/Ho_Chi_Minh', label: 'Indochina Time (ICT) — UTC+7 (Việt Nam)' },
+  { value: 'Asia/Bangkok', label: 'Indochina Time (ICT) — UTC+7 (Thái Lan, Lào, Campuchia)' },
+  { value: 'Asia/Singapore', label: 'Singapore Time (SGT) — UTC+8' },
+  { value: 'Asia/Shanghai', label: 'China Standard Time (CST) — UTC+8' },
+  { value: 'Asia/Tokyo', label: 'Japan Standard Time (JST) — UTC+9' },
+  { value: 'Asia/Seoul', label: 'Korea Standard Time (KST) — UTC+9' },
+  { value: 'America/New_York', label: 'Eastern Time (ET) — UTC-5' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (PT) — UTC-8' },
+  { value: 'Europe/London', label: 'Greenwich Mean Time (GMT) — UTC+0' },
+  { value: 'Europe/Paris', label: 'Central European Time (CET) — UTC+1' },
+  { value: 'UTC', label: 'UTC — Coordinated Universal Time' },
+];
+
 function DeleteDataModal({ type, label, onClose }) {
   const { user } = useAuthStore();
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
@@ -291,10 +305,17 @@ export default function SettingsPage() {
     queryKey: ['settings'],
     queryFn: () => api.get('/admin/settings').then((r) => r.data.data),
   });
+
+  const { data: tzSettings } = useQuery({
+    queryKey: ['timezone-settings'],
+    queryFn: () => api.get('/admin/timezone').then((r) => r.data.data),
+  });
+
   const [storeName, setStoreName] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
   const [storePhone, setStorePhone] = useState('');
   const [stockManagementEnabled, setStockManagementEnabled] = useState(true);
+  const [dayStartHour, setDayStartHour] = useState(7);
 
   useEffect(() => {
     if (settings.storeName) setStoreName(settings.storeName);
@@ -303,11 +324,22 @@ export default function SettingsPage() {
     if (settings.stockManagementEnabled != null) {
       setStockManagementEnabled(String(settings.stockManagementEnabled).toLowerCase() === 'true');
     }
-  }, [settings]);
+    if (tzSettings?.dayStartHour) setDayStartHour(tzSettings.dayStartHour);
+  }, [settings, tzSettings]);
 
   const updateSettings = useMutation({
     mutationFn: (data) => api.put('/admin/settings', data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings'] }); toast.success('Đã cập nhật'); },
+    onError: (err) => toast.error(err.response?.data?.message || 'Lỗi'),
+  });
+
+  const updateTimezone = useMutation({
+    mutationFn: (data) => api.put('/admin/timezone', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['timezone-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      toast.success('Đã cập nhật giờ bắt đầu ngày');
+    },
     onError: (err) => toast.error(err.response?.data?.message || 'Lỗi'),
   });
 
@@ -330,6 +362,35 @@ export default function SettingsPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Tên cửa hàng</label><input value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Địa chỉ</label><input value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label><input value={storePhone} onChange={(e) => setStorePhone(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm" /></div>
+          <div className="rounded-lg border border-blue-200 p-4 bg-blue-50">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-800">Giờ bắt đầu ngày làm việc</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Áp dụng cho báo cáo doanh thu và dashboard. Phiên chơi bắt đầu trước giờ này sẽ tính vào ngày hôm trước.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {[5, 7].map((hour) => (
+                  <button
+                    key={hour}
+                    onClick={() => updateTimezone.mutate({ dayStartHour: hour })}
+                    disabled={updateTimezone.isPending}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      dayStartHour === hour
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                    } disabled:opacity-50`}
+                  >
+                    {hour}:00
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-blue-600 mt-2">
+              Đang chọn: ngày bắt đầu lúc <strong>{dayStartHour}:00</strong> sáng (VN)
+            </p>
+          </div>
           <div className="rounded-lg border border-gray-200 p-3 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-800">Quản lý tồn kho</p>
@@ -357,11 +418,13 @@ export default function SettingsPage() {
                     storeAddress,
                     storePhone,
                     stockManagementEnabled: String(stockManagementEnabled),
+                    timezone,
                   }
                   : {
                     storeName,
                     storeAddress,
                     storePhone,
+                    timezone,
                   }
               )
             }

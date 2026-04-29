@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { HiOutlineArrowLeft, HiOutlinePlus, HiOutlineMinus, HiOutlineTrash, HiOutlinePause, HiOutlinePlay } from 'react-icons/hi';
+import { HiOutlineArrowLeft, HiOutlinePlus, HiOutlineMinus, HiOutlineTrash, HiOutlinePause, HiOutlinePlay, HiCheck } from 'react-icons/hi';
 import api from '../../services/api';
 import { formatVND, formatTime, calcDurationSeconds, calcPlayAmount } from '../../utils/format';
 import CheckoutModal from './CheckoutModal';
@@ -29,10 +29,11 @@ export default function RoomSession({ room, session, onClose }) {
   const endingConfirmedRef = useRef(false);
   const [productQtyInput, setProductQtyInput] = useState({});
   const [completedForInvoice, setCompletedForInvoice] = useState(null);
-  const [tempReceiptSession, setTempReceiptSession] = useState(null);
   const [orderAdjustConfirm, setOrderAdjustConfirm] = useState(null);
   const [printingTempReceipt, setPrintingTempReceipt] = useState(false);
-  const [pendingPause, setPendingPause] = useState(false);
+  const [tempReceiptSnapshot, setTempReceiptSnapshot] = useState(null);
+  const [editingItemQty, setEditingItemQty] = useState(null);
+  const [editingItemQtyValue, setEditingItemQtyValue] = useState(1);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const orderedSectionRef = useRef(null);
@@ -46,13 +47,26 @@ export default function RoomSession({ room, session, onClose }) {
 
   const currentSession = sessionData || session;
   const isPaused = currentSession?.isPaused || false;
+  const hasEndTime = !!currentSession?.endTime;
 
   useEffect(() => {
-    // Stop timer when paused (either from server or from pending pause request)
-    if (isPaused || pendingPause) return;
+    // Stop timer when paused or when session has been ended (for temp calculation)
+    if (isPaused || hasEndTime) return;
     const id = setInterval(() => setSeconds((prev) => prev + 1), 1000);
     return () => clearInterval(id);
-  }, [isPaused, sessionData, pendingPause]);
+  }, [isPaused, sessionData, hasEndTime]);
+
+  // Sync seconds when sessionData is refetched (e.g., after resume)
+  useEffect(() => {
+    if (sessionData) {
+      const dur = calcDurationSeconds(sessionData.startTime);
+      const newSeconds = dur - (sessionData.pausedDuration || 0);
+      // Only update if significantly different (avoid micro-updates)
+      if (Math.abs(newSeconds - seconds) > 5) {
+        setSeconds(newSeconds);
+      }
+    }
+  }, [sessionData?.pausedDuration]);
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-list'],
@@ -143,8 +157,6 @@ export default function RoomSession({ room, session, onClose }) {
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || 'Không tạm dừng được');
-      setPrintingTempReceipt(false);
-      setPendingPause(false);
     },
   });
 
@@ -165,16 +177,16 @@ export default function RoomSession({ room, session, onClose }) {
   // Calculate play amount considering paused duration
   const currentPlayAmount = calcPlayAmountWithPause(seconds, room.pricePerHour);
   const isFrozenByPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
-  const frozenSeconds = isFrozenByPaymentRequested
+  const frozenSeconds = (isFrozenByPaymentRequested || hasEndTime)
     ? calcDurationSeconds(session.startTime, currentSession.endTime || currentSession.paymentRequestedAt || null)
     : seconds;
-  const frozenPlayAmount = isFrozenByPaymentRequested
+  const frozenPlayAmount = (isFrozenByPaymentRequested || hasEndTime)
     ? (typeof currentSession.totalPlayAmount === 'number' ? currentSession.totalPlayAmount : currentPlayAmount)
     : currentPlayAmount;
 
   const playAmount = checkoutSnapshot?.playAmount ?? frozenPlayAmount;
   const foodAmount = orderItems.reduce((s, i) => s + i.totalPrice, 0);
-  const displaySeconds = checkoutSnapshot?.seconds ?? (isFrozenByPaymentRequested ? frozenSeconds : seconds);
+  const displaySeconds = checkoutSnapshot?.seconds ?? (isFrozenByPaymentRequested || hasEndTime ? frozenSeconds : seconds);
 
   // Helper function to calculate play amount using current seconds state
   function calcPlayAmountWithPause(currentSeconds, pricePerHour) {
@@ -189,6 +201,7 @@ export default function RoomSession({ room, session, onClose }) {
   });
 
   const canApproveCheckout = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(user?.role);
+  const canDirectEditQty = ['SUPER_ADMIN', 'MANAGER'].includes(user?.role);
   const isPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
   const canManageRoomFlow = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(user?.role);
   const showRoomActions = currentSession.status === 'ACTIVE' && canManageRoomFlow;
@@ -259,48 +272,59 @@ export default function RoomSession({ room, session, onClose }) {
   };
 
   const handlePrintTempReceipt = async () => {
-    // If not paused and has permission, pause first
-    if (!isPaused && canPauseResume) {
-      const confirmPause = window.confirm('In phiếu tạm tính sẽ tạm dừng giờ chơi. Tiếp tục?');
-      if (!confirmPause) return;
-      
+    // Save current values as snapshot for printing
+    const snapshot = {
+      id: `TEMP-${Date.now()}`,
+      room,
+      staff: currentSession.staff,
+      startTime: session.startTime,
+      endTime: currentSession.endTime || new Date().toISOString(),
+      orderItems: [...orderItems],
+      totalPlayAmount: currentPlayAmount,
+      totalFoodAmount: foodAmount,
+      totalAmount: currentPlayAmount + foodAmount,
+      isPaused: false,
+      isTempReceipt: true,
+    };
+    setTempReceiptSnapshot(snapshot);
+
+    // If session not ended yet, call endSession to freeze the timer first
+    if (!currentSession.endTime) {
+      const confirmEnd = window.confirm('In phiếu tạm tính sẽ dừng giờ chơi. Tiếp tục?');
+      if (!confirmEnd) {
+        setTempReceiptSnapshot(null);
+        return;
+      }
+
       setPrintingTempReceipt(true);
-      setPendingPause(true);
       try {
-        await pauseMutation.mutateAsync();
-        // After pausing, show the receipt
-        setTempReceiptSession({
-          id: `TEMP-${Date.now()}`,
-          room,
-          staff: currentSession.staff,
-          startTime: session.startTime,
-          orderItems,
-          totalPlayAmount: currentPlayAmount,
-          totalFoodAmount: foodAmount,
-          totalAmount: currentPlayAmount + foodAmount,
-          isPaused: true,
-        });
+        // Call endSession to freeze timer on server (does NOT change status to PAYMENT_REQUESTED)
+        await api.put(`/sessions/${session.id}/end`);
+        // Refresh session data
+        await queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+        await queryClient.invalidateQueries({ queryKey: ['rooms'] });
+        toast.success('Đã dừng giờ, sẵn sàng in tạm tính');
       } catch (err) {
-        toast.error('Không tạm dừng được');
+        toast.error(err.response?.data?.message || 'Không thể dừng giờ');
         setPrintingTempReceipt(false);
-        setPendingPause(false);
+        setTempReceiptSnapshot(null);
       }
     } else {
-      // Already paused or no permission, just show receipt
+      // Session already ended, just show receipt
       setPrintingTempReceipt(true);
-      setTempReceiptSession({
-        id: `TEMP-${Date.now()}`,
-        room,
-        staff: currentSession.staff,
-        startTime: session.startTime,
-        orderItems,
-        totalPlayAmount: currentPlayAmount,
-        totalFoodAmount: foodAmount,
-        totalAmount: currentPlayAmount + foodAmount,
-        isPaused: isPaused,
-      });
     }
   };
+
+  // Resume ended session (clear endTime to continue playing)
+  const resumeEndedMutation = useMutation({
+    mutationFn: () => api.put(`/sessions/${session.id}/resume-ended`),
+    onSuccess: () => {
+      toast.success('Đã tiếp tục phiên chơi');
+      queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không thể tiếp tục'),
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-50 flex flex-col">
@@ -383,6 +407,30 @@ export default function RoomSession({ room, session, onClose }) {
             >
               {canApproveCheckout ? 'Duyệt thanh toán' : 'Đã gửi yêu cầu thanh toán'}
             </button>
+          ) : hasEndTime ? (
+            <>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {canPauseResume && (
+                  <button
+                    onClick={() => resumeEndedMutation.mutate()}
+                    disabled={resumeEndedMutation.isPending}
+                    className="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60"
+                  >
+                    {resumeEndedMutation.isPending ? 'Đang xử lý...' : 'Tiếp tục tính giờ'}
+                  </button>
+                )}
+                <button
+                  onClick={() => canApproveCheckout && setShowCheckout(true)}
+                  disabled={!canApproveCheckout}
+                  className="flex-1 py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 transition-colors disabled:opacity-60"
+                >
+                  Thanh toán
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-center text-gray-500">
+                Phiên đang tạm dừng. Bấm "Tiếp tục tính giờ" để chơi tiếp hoặc "Thanh toán" để kết thúc.
+              </p>
+            </>
           ) : (
             <>
               <button
@@ -400,7 +448,7 @@ export default function RoomSession({ room, session, onClose }) {
               >
                 Kết thúc phiên
               </button>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   onClick={handlePrintTempReceipt}
                   disabled={pauseMutation.isPending || resumeMutation.isPending || printingTempReceipt}
@@ -412,7 +460,6 @@ export default function RoomSession({ room, session, onClose }) {
                   <button
                     onClick={() => {
                       if (isPaused) {
-                        setPendingPause(false);
                         resumeMutation.mutate();
                       } else {
                         pauseMutation.mutate();
@@ -478,28 +525,89 @@ export default function RoomSession({ room, session, onClose }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={isStaff}
-                        title={isStaff ? 'Nhân viên không được giảm hoặc xóa món' : undefined}
-                        onClick={() => !isStaff && openOrderDecreaseOrRemove(item)}
-                        className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <HiOutlineMinus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                      <button
-                        type="button"
-                        disabled={isStaff && lineConfirmed}
-                        title={isStaff && lineConfirmed ? 'Món đã xác nhận: chỉ thu ngân/quản lý được thêm/bớt' : undefined}
-                        onClick={() => updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 })}
-                        className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <HiOutlinePlus className="w-3.5 h-3.5" />
-                      </button>
+                      {canDirectEditQty && editingItemQty === item.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={1}
+                            value={editingItemQtyValue}
+                            onChange={(e) => setEditingItemQtyValue(Math.max(1, parseInt(e.target.value) || 1))}
+                            onBlur={() => {
+                              if (editingItemQtyValue !== item.quantity) {
+                                updateItemMutation.mutate({ id: item.id, quantity: editingItemQtyValue });
+                              }
+                              setEditingItemQty(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                if (editingItemQtyValue !== item.quantity) {
+                                  updateItemMutation.mutate({ id: item.id, quantity: editingItemQtyValue });
+                                }
+                                setEditingItemQty(null);
+                              }
+                              if (e.key === 'Escape') {
+                                setEditingItemQty(null);
+                              }
+                            }}
+                            className="w-16 px-2 py-1 text-sm text-center border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editingItemQtyValue !== item.quantity) {
+                                updateItemMutation.mutate({ id: item.id, quantity: editingItemQtyValue });
+                              }
+                              setEditingItemQty(null);
+                            }}
+                            className="p-1 rounded bg-blue-500 text-white hover:bg-blue-600"
+                          >
+                            <HiCheck className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!canApproveCheckout}
+                            title={!canApproveCheckout ? 'Chỉ thu ngân/quản lý được giảm hoặc xóa món' : undefined}
+                            onClick={() => canApproveCheckout && openOrderDecreaseOrRemove(item)}
+                            className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <HiOutlineMinus className="w-3.5 h-3.5" />
+                          </button>
+                          <span
+                            onClick={() => {
+                              if (canDirectEditQty) {
+                                setEditingItemQtyValue(item.quantity);
+                                setEditingItemQty(item.id);
+                              }
+                            }}
+                            className={`w-12 text-center text-sm font-medium cursor-pointer hover:bg-gray-100 rounded ${canDirectEditQty ? 'text-blue-600' : ''}`}
+                            title={canDirectEditQty ? 'Click để sửa số lượng' : undefined}
+                          >
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={isStaff && lineConfirmed}
+                            title={isStaff && lineConfirmed ? 'Món đã xác nhận: chỉ thu ngân/quản lý được thêm' : undefined}
+                            onClick={() => {
+                              if (canApproveCheckout) {
+                                updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 });
+                              } else if (!lineConfirmed) {
+                                updateItemMutation.mutate({ id: item.id, quantity: item.quantity + 1 });
+                              }
+                            }}
+                            className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <HiOutlinePlus className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                     <span className="text-sm font-semibold text-gray-800 w-24 text-right">{formatVND(item.totalPrice)}</span>
-                    {!isStaff && (
+                    {canApproveCheckout && (
                       <button type="button" onClick={() => openOrderRemove(item)} className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600">
                         <HiOutlineTrash className="w-4 h-4" />
                       </button>
@@ -793,10 +901,10 @@ export default function RoomSession({ room, session, onClose }) {
         />
       )}
 
-      {tempReceiptSession && (
+      {tempReceiptSnapshot && (
         <InvoicePrint
-          session={tempReceiptSession}
-          onClose={() => { setTempReceiptSession(null); setPrintingTempReceipt(false); setPendingPause(false); }}
+          session={tempReceiptSnapshot}
+          onClose={() => { setTempReceiptSnapshot(null); setPrintingTempReceipt(false); }}
         />
       )}
     </div>

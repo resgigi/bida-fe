@@ -48,7 +48,7 @@ function HR({ dashed }) {
 }
 
 function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
-  const isTempReceipt = String(session.id || '').startsWith('TEMP-');
+  const isTempReceipt = String(session.id || '').startsWith('TEMP-') || session.isTempReceipt;
   return (
     <div id="receipt-body" style={S.root}>
       <div style={S.center}>
@@ -123,19 +123,24 @@ function ReceiptBody({ session, storeName, storeAddr, storePhone }) {
 
       <HR />
 
-      <div style={S.rowFlex}>
-        <span>Thanh toán</span>
-        <span style={{ color: '#111' }}>{PAYMENT_LABEL[session.paymentMethod] || session.paymentMethod}</span>
-      </div>
-      <div style={{ ...S.rowFlex, fontWeight: '900' }}>
-        <span>Đã thu</span>
-        <span>{formatVND(session.paidAmount)}</span>
-      </div>
-      {(session.paidAmount ?? 0) > (session.totalAmount ?? 0) && (
-        <div style={{ ...S.rowFlex, color: '#16a34a' }}>
-          <span>Tiền thừa</span>
-          <span>{formatVND((session.paidAmount ?? 0) - (session.totalAmount ?? 0))}</span>
-        </div>
+      {!isTempReceipt && (
+        <>
+          <div style={S.rowFlex}>
+            <span>Thanh toán</span>
+            <span style={{ color: '#111' }}>{PAYMENT_LABEL[session.paymentMethod] || session.paymentMethod}</span>
+          </div>
+          <div style={{ ...S.rowFlex, fontWeight: '900' }}>
+            <span>Đã thu</span>
+            <span>{formatVND(session.paidAmount)}</span>
+          </div>
+          {(session.paidAmount ?? 0) > (session.totalAmount ?? 0) && (
+            <div style={{ ...S.rowFlex, color: '#16a34a' }}>
+              <span>Tiền thừa</span>
+              <span>{formatVND((session.paidAmount ?? 0) - (session.totalAmount ?? 0))}</span>
+            </div>
+          )}
+          <HR />
+        </>
       )}
 
       {session.note && (

@@ -11,7 +11,10 @@ import Modal from '../../components/Modal';
 import useAuthStore from '../../stores/authStore';
 
 export default function RoomSession({ room, session, onClose }) {
-  const [seconds, setSeconds] = useState(calcDurationSeconds(session.startTime));
+  const [seconds, setSeconds] = useState(() => {
+    const dur = calcDurationSeconds(session.startTime);
+    return dur - (session.pausedDuration || 0);
+  });
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
@@ -28,21 +31,28 @@ export default function RoomSession({ room, session, onClose }) {
   const [completedForInvoice, setCompletedForInvoice] = useState(null);
   const [tempReceiptSession, setTempReceiptSession] = useState(null);
   const [orderAdjustConfirm, setOrderAdjustConfirm] = useState(null);
+  const [printingTempReceipt, setPrintingTempReceipt] = useState(false);
+  const [pendingPause, setPendingPause] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const orderedSectionRef = useRef(null);
   const productsSectionRef = useRef(null);
-
-  useEffect(() => {
-    const id = setInterval(() => setSeconds(calcDurationSeconds(session.startTime)), 1000);
-    return () => clearInterval(id);
-  }, [session.startTime]);
 
   const { data: sessionData } = useQuery({
     queryKey: ['session', session.id],
     queryFn: () => api.get(`/sessions/${session.id}`).then((r) => r.data.data),
     refetchInterval: 5000,
   });
+
+  const currentSession = sessionData || session;
+  const isPaused = currentSession?.isPaused || false;
+
+  useEffect(() => {
+    // Stop timer when paused (either from server or from pending pause request)
+    if (isPaused || pendingPause) return;
+    const id = setInterval(() => setSeconds((prev) => prev + 1), 1000);
+    return () => clearInterval(id);
+  }, [isPaused, sessionData, pendingPause]);
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-list'],
@@ -131,7 +141,11 @@ export default function RoomSession({ room, session, onClose }) {
       queryClient.invalidateQueries({ queryKey: ['session', session.id] });
       queryClient.invalidateQueries({ queryKey: ['rooms'] });
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Không tạm dừng được'),
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Không tạm dừng được');
+      setPrintingTempReceipt(false);
+      setPendingPause(false);
+    },
   });
 
   const resumeMutation = useMutation({
@@ -144,14 +158,12 @@ export default function RoomSession({ room, session, onClose }) {
     onError: (err) => toast.error(err.response?.data?.message || 'Không tiếp tục được'),
   });
 
-  const currentSession = sessionData || session;
   const orderItems = currentSession.orderItems || [];
-  const isPaused = currentSession.isPaused || false;
   const pausedDuration = currentSession.pausedDuration || 0;
   const canPauseResume = user?.role === 'SUPER_ADMIN' || user?.role === 'MANAGER';
   
   // Calculate play amount considering paused duration
-  const currentPlayAmount = calcPlayAmountWithPause(session.startTime, room.pricePerHour, pausedDuration, isPaused);
+  const currentPlayAmount = calcPlayAmountWithPause(seconds, room.pricePerHour);
   const isFrozenByPaymentRequested = currentSession.status === 'PAYMENT_REQUESTED';
   const frozenSeconds = isFrozenByPaymentRequested
     ? calcDurationSeconds(session.startTime, currentSession.endTime || currentSession.paymentRequestedAt || null)
@@ -164,14 +176,9 @@ export default function RoomSession({ room, session, onClose }) {
   const foodAmount = orderItems.reduce((s, i) => s + i.totalPrice, 0);
   const displaySeconds = checkoutSnapshot?.seconds ?? (isFrozenByPaymentRequested ? frozenSeconds : seconds);
 
-  // Helper function to calculate play amount with pause consideration
-  function calcPlayAmountWithPause(startTime, pricePerHour, pausedDurationSec, paused) {
-    const now = paused ? new Date(sessionData?.pausedAt || session.pausedAt || startTime) : new Date();
-    const start = new Date(startTime);
-    const totalMs = now - start;
-    const totalSec = Math.floor(totalMs / 1000);
-    const activeSec = totalSec - (pausedDurationSec || 0);
-    const hours = activeSec / 3600;
+  // Helper function to calculate play amount using current seconds state
+  function calcPlayAmountWithPause(currentSeconds, pricePerHour) {
+    const hours = currentSeconds / 3600;
     return Math.round(hours * pricePerHour);
   }
 
@@ -257,6 +264,8 @@ export default function RoomSession({ room, session, onClose }) {
       const confirmPause = window.confirm('In phiếu tạm tính sẽ tạm dừng giờ chơi. Tiếp tục?');
       if (!confirmPause) return;
       
+      setPrintingTempReceipt(true);
+      setPendingPause(true);
       try {
         await pauseMutation.mutateAsync();
         // After pausing, show the receipt
@@ -273,9 +282,12 @@ export default function RoomSession({ room, session, onClose }) {
         });
       } catch (err) {
         toast.error('Không tạm dừng được');
+        setPrintingTempReceipt(false);
+        setPendingPause(false);
       }
     } else {
       // Already paused or no permission, just show receipt
+      setPrintingTempReceipt(true);
       setTempReceiptSession({
         id: `TEMP-${Date.now()}`,
         room,
@@ -391,14 +403,21 @@ export default function RoomSession({ room, session, onClose }) {
               <div className="mt-2 flex gap-2">
                 <button
                   onClick={handlePrintTempReceipt}
-                  disabled={pauseMutation.isPending || resumeMutation.isPending}
+                  disabled={pauseMutation.isPending || resumeMutation.isPending || printingTempReceipt}
                   className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-300 transition-colors disabled:opacity-60"
                 >
-                  {pauseMutation.isPending || resumeMutation.isPending ? 'Đang xử lý...' : 'In phiếu tạm tính'}
+                  {pauseMutation.isPending || resumeMutation.isPending || printingTempReceipt ? 'Đang xử lý...' : 'In phiếu tạm tính'}
                 </button>
                 {canPauseResume && (
                   <button
-                    onClick={() => isPaused ? resumeMutation.mutate() : pauseMutation.mutate()}
+                    onClick={() => {
+                      if (isPaused) {
+                        setPendingPause(false);
+                        resumeMutation.mutate();
+                      } else {
+                        pauseMutation.mutate();
+                      }
+                    }}
                     disabled={pauseMutation.isPending || resumeMutation.isPending}
                     className={`flex items-center justify-center gap-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${isPaused ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-yellow-500 text-white hover:bg-yellow-600'}`}
                   >
@@ -777,7 +796,7 @@ export default function RoomSession({ room, session, onClose }) {
       {tempReceiptSession && (
         <InvoicePrint
           session={tempReceiptSession}
-          onClose={() => setTempReceiptSession(null)}
+          onClose={() => { setTempReceiptSession(null); setPrintingTempReceipt(false); setPendingPause(false); }}
         />
       )}
     </div>

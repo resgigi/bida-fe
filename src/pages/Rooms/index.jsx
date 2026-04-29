@@ -17,13 +17,15 @@ const statusTabs = [
   { label: 'Còn trống', value: 'AVAILABLE' },
 ];
 
-function RoomTimer({ startTime }) {
+function RoomTimer({ startTime, pausedDuration = 0 }) {
   const [, setTick] = useState(0);
   useEffect(() => {
+    if (!startTime) return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
-  const sec = Math.floor((Date.now() - new Date(startTime).getTime()) / 1000);
+  const totalSec = Math.floor((Date.now() - new Date(startTime).getTime()) / 1000);
+  const sec = totalSec - pausedDuration;
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   return <span>{h}:{String(m).padStart(2, '0')}</span>;
@@ -43,7 +45,7 @@ export default function RoomsPage() {
 
   const { data: rooms = [], isLoading } = useQuery({
     queryKey: ['rooms', tab],
-    queryFn: () => api.get('/rooms', { params: tab ? { status: tab } : {} }).then((r) => r.data.data),
+    queryFn: () => api.get('/rooms', { params: tab ? { status: tab } : {} }).then((r) => r.data.data ?? []),
     refetchInterval: 10000,
   });
 
@@ -108,6 +110,7 @@ export default function RoomsPage() {
           {rooms.map((room) => {
             const activeSession = room.sessions?.[0];
             const isPaymentRequested = activeSession?.status === 'PAYMENT_REQUESTED';
+            const isPausedSession = activeSession?.isPaused === true;
             const statusText = room.status === 'IN_USE'
               ? (isPaymentRequested ? 'Chờ duyệt thanh toán' : 'Đang sử dụng')
               : room.status === 'AVAILABLE'
@@ -128,9 +131,16 @@ export default function RoomsPage() {
                   <HiOutlineShoppingCart className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                 )}
                 <h3 className="font-semibold text-gray-800 truncate">{room.name}</h3>
-                <span className={`inline-flex mt-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusClass}`}>
-                  {statusText}
-                </span>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusClass}`}>
+                    {statusText}
+                  </span>
+                  {isPausedSession && (
+                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                      Đang tạm dừng
+                    </span>
+                  )}
+                </div>
                 {activeSession && (
                   <div className="mt-2 space-y-1">
                     {activeSession.staff?.fullName && (
@@ -139,11 +149,11 @@ export default function RoomsPage() {
                         <span className="truncate">{activeSession.staff.fullName}</span>
                       </p>
                     )}
-                    <p className="text-xs text-gray-500 flex items-center gap-1">
+                    <p className={`text-xs flex items-center gap-1 ${isPausedSession ? 'text-yellow-600' : 'text-gray-500'}`}>
                       <HiOutlineClock className="w-3.5 h-3.5" />
-                      <RoomTimer startTime={activeSession.startTime} />
+                      <RoomTimer startTime={activeSession.startTime} pausedDuration={activeSession.pausedDuration || 0} />
                     </p>
-                    <p className="text-sm font-bold text-blue-600">
+                    <p className={`text-sm font-bold ${isPausedSession ? 'text-yellow-600' : 'text-blue-600'}`}>
                       {formatVND(Math.round(((Date.now() - new Date(activeSession.startTime).getTime()) / 3600000) * room.pricePerHour))}
                     </p>
                   </div>

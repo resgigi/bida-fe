@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { HiOutlineSearch, HiOutlineEye } from 'react-icons/hi';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { HiOutlineSearch, HiOutlineEye, HiOutlineTrash } from 'react-icons/hi';
+import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { formatVND, formatDateTime } from '../../utils/format';
+import { useAuthStore } from '../../store/auth';
 import SessionDetailModal from './SessionDetailModal';
 
 function formatShortDuration(start, end) {
@@ -66,6 +68,11 @@ export default function SessionHistoryPage() {
   const [appliedSearch, setAppliedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [detailId, setDetailId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const { user } = useAuthStore();
+  const queryClient = useQueryClient();
+
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const { data: rooms = [] } = useQuery({
     queryKey: ['rooms-all'],
@@ -92,6 +99,16 @@ export default function SessionHistoryPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['sessions-history', viewMode, from, to, roomId, roomAction, roomActionBy, appliedSearch, page],
     queryFn: () => api.get('/sessions', { params }).then((r) => r.data.data),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (sessionId) => api.delete(`/sessions/${sessionId}`),
+    onSuccess: () => {
+      toast.success('Đã xóa phiên');
+      queryClient.invalidateQueries({ queryKey: ['sessions-history'] });
+      setDeleteTarget(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Không thể xóa phiên'),
   });
 
   const sessions = data?.sessions || [];
@@ -235,13 +252,24 @@ export default function SessionHistoryPage() {
                 <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[row.status] || 'bg-gray-100'}`}>
                   {STATUS_OPTIONS.find((o) => o.value === row.status)?.label || row.status}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setDetailId(row.id)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
-                >
-                  <HiOutlineEye className="w-4 h-4" /> Xem
-                </button>
+                <div className="flex items-center gap-2">
+                  {isSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(row)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100"
+                    >
+                      <HiOutlineTrash className="w-4 h-4" /> Xóa
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDetailId(row.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
+                  >
+                    <HiOutlineEye className="w-4 h-4" /> Xem
+                  </button>
+                </div>
               </div>
               {showClosureCol && (
                 <p className="text-xs font-medium text-gray-700">
@@ -331,13 +359,25 @@ export default function SessionHistoryPage() {
                     </div>
                   </td>
                   <td className="py-3 px-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setDetailId(row.id)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
-                    >
-                      <HiOutlineEye className="w-4 h-4" /> Xem
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(row)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100"
+                          title="Xóa phiên"
+                        >
+                          <HiOutlineTrash className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setDetailId(row.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
+                      >
+                        <HiOutlineEye className="w-4 h-4" /> Xem
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -374,6 +414,40 @@ export default function SessionHistoryPage() {
       </div>
 
       {detailId && <SessionDetailModal sessionId={detailId} onClose={() => setDetailId(null)} />}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Xóa phiên?</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Phiên: <strong>{deleteTarget.room?.name}</strong>
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              Thời gian: {formatDateTime(deleteTarget.startTime)} - {deleteTarget.endTime ? formatDateTime(deleteTarget.endTime) : '—'}
+            </p>
+            <p className="text-xs text-amber-600 mb-4">
+              Cảnh báo: Hành động này sẽ xóa vĩnh viễn phiên này và không ảnh hưởng đến báo cáo đã tính.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate(deleteTarget.id)}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleteMutation.isPending ? 'Đang xóa...' : 'Xóa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -414,18 +414,16 @@ export default function SettingsPage() {
               updateSettings.mutate(
                 isSuperAdmin
                   ? {
-                    storeName,
-                    storeAddress,
-                    storePhone,
-                    stockManagementEnabled: String(stockManagementEnabled),
-                    timezone,
-                  }
+                      storeName,
+                      storeAddress,
+                      storePhone,
+                      stockManagementEnabled: String(stockManagementEnabled),
+                    }
                   : {
-                    storeName,
-                    storeAddress,
-                    storePhone,
-                    timezone,
-                  }
+                      storeName,
+                      storeAddress,
+                      storePhone,
+                    }
               )
             }
             disabled={updateSettings.isPending}
